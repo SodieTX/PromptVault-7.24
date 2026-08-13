@@ -33,14 +33,17 @@ function pvBuildStorageDump(allStorage, appVersion, reason) {
   };
 }
 
-// Generic item counter: any storage value shaped like a Prompt Vault store
+// Generic content counter: any storage value shaped like a Prompt Vault store
 // ({folders:{prompts:[],children:[]}}) is counted, whatever its key is named.
-// Workspaces (pv_ws arrays) count as one item each. This is what makes the
-// empty-vault guard future-proof for silos that do not exist yet.
-function pvCountTreeItems(node) {
+// FOLDERS COUNT AS CONTENT — a vault of empty folders is organized work the
+// user built, not an empty vault. (A folders-only vault once tripped every
+// "empty" guard: never auto-backed-up, and Drive restore silently replaced it.)
+// Workspaces (pv_ws arrays) count as one each. Counting is structural, so
+// silos that do not exist yet are covered automatically.
+function pvCountTreeContent(node) {
   if (!node || typeof node !== "object") return 0;
   let n = Array.isArray(node.prompts) ? node.prompts.length : 0;
-  for (const child of Array.isArray(node.children) ? node.children : []) n += pvCountTreeItems(child);
+  for (const child of Array.isArray(node.children) ? node.children : []) n += 1 + pvCountTreeContent(child);
   return n;
 }
 function pvDumpItemCount(dump) {
@@ -49,7 +52,7 @@ function pvDumpItemCount(dump) {
   for (const key of Object.keys(storage)) {
     const value = storage[key];
     if (value && typeof value === "object" && value.folders && typeof value.folders === "object") {
-      total += pvCountTreeItems(value.folders);
+      total += pvCountTreeContent(value.folders);
     } else if (key === "pv_ws" && Array.isArray(value)) {
       total += value.length;
     }

@@ -59,6 +59,16 @@
     const workspaces = countWsNodes(WS);
     const filesCount = files?.folders ? countTree(files.folders) : 0;
     const lists = LS?.folders ? countTree(LS.folders) : 0;
+    // Folders are content too: a vault of empty folders is organized user
+    // work, and treating it as "empty" once made sync refuse to back it up.
+    const countFolders = (n) => {
+      if (!n || typeof n !== "object") return 0;
+      let c = 0;
+      for (const ch of Array.isArray(n.children) ? n.children : []) c += 1 + countFolders(ch);
+      return c;
+    };
+    const folders = [P, SN, BM, NT, KL, GP, IP, PRJ, CH, files, LS]
+      .reduce((n, s) => n + (s && s.folders ? countFolders(s.folders) : 0), 0);
     const total =
       prompts + imgprompts + skills + snippets + bookmarks + notes + customgpts +
       projects + chats + workspaces + filesCount + lists;
@@ -75,6 +85,7 @@
       workspaces,
       files: filesCount,
       lists,
+      folders,
       total,
     };
   }
@@ -503,7 +514,7 @@
       const meta = res[MK] || {};
       const counts = itemCountsFromStores(P, SN, BM, NT, KL, GP, IP, PRJ, CH, WS, files, res[LSK]);
 
-      if (counts.total === 0) {
+      if (counts.total === 0 && !counts.folders) {
         const error = force
           ? "Backup blocked — vault is empty (cloud not overwritten)"
           : "Sync blocked — vault is empty";

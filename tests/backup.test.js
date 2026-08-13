@@ -36,7 +36,7 @@ test('storage dump includes unknown future silos verbatim', () => {
   assert.ok(!('pv_drag_image' in dump.storage), 'transient drag stash must not be persisted');
 });
 
-test('dump item counter sees any folder-shaped store, present or future', () => {
+test('dump content counter sees items AND folders in any store, present or future', () => {
   const G = loadBackupGuard();
   const dump = G.buildStorageDump({
     pv_ph: { folders: { id: 'phroot', prompts: [{ id: 'a' }, { id: 'b' }], children: [{ id: 'c1', prompts: [{ id: 'c' }], children: [] }] } },
@@ -44,8 +44,24 @@ test('dump item counter sees any folder-shaped store, present or future', () => 
     pv_ws: [{ id: 'w1' }],
     pv_cfg: { theme: 'dark' }
   }, '1', 'test');
-  assert.equal(G.dumpItemCount(dump), 5);
-  assert.equal(G.dumpItemCount(G.buildStorageDump({ pv_cfg: {} }, '1', 'test')), 0);
+  assert.equal(G.dumpItemCount(dump), 6, '4 items + 1 folder + 1 workspace');
+  assert.equal(G.dumpItemCount(G.buildStorageDump({ pv_cfg: {} }, '1', 'test')), 0, 'a virgin install is genuinely empty');
+  // Regression: a vault of EMPTY FOLDERS is organized user work, not an empty
+  // vault — it must be backed up, and must never be silently replaced.
+  const foldersOnly = G.buildStorageDump({
+    pv_p: { folders: { id: 'root', prompts: [], children: [{ id: 'f1', prompts: [], children: [{ id: 'f2', prompts: [], children: [] }] }] } }
+  }, '1', 'test');
+  assert.equal(G.dumpItemCount(foldersOnly), 2, 'empty folders count as content');
+});
+
+test('folder-only vaults pass every empty-guard: restore confirm, Drive push', () => {
+  const vaultSrc = read('vault.js');
+  assert.match(vaultSrc, /pvVaultHasAnyStructure/, 'folder-structure check missing');
+  const skipLine = vaultSrc.split('\n').find(l => l.includes('const skipModal='));
+  assert.ok(skipLine && skipLine.includes('pvVaultHasAnyStructure'), 'Drive restore must not skip confirmation while folders exist');
+  assert.match(vaultSrc, /runRestoreLatestFromDrive[\s\S]{0,600}AUTO_BACKUP_NOW/, 'Drive restore must write a local pre-restore dump first');
+  const drive = read('drive-shared.js');
+  assert.match(drive, /counts\.total === 0 && !counts\.folders/, 'Drive push must accept folder-only vaults');
 });
 
 // ── The empty-vault guard is what keeps a fresh reinstall from destroying the

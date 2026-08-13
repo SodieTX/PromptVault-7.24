@@ -3801,8 +3801,15 @@ const PRIVACY_PERMS=[
 ];
 
 // Toolbar + Settings: pull latest Drive backup into local vault (safeRestore + restoreVault).
+// Any store with folders beyond its root is real user work, even at 0 items.
+function pvVaultHasAnyStructure(){
+  return[P,SN,BM,NT,KL,GP,IP,PH,LS].some(s=>(s?.folders?.children||[]).length>0);
+}
 async function runRestoreLatestFromDrive(){
   try{
+    // Local pre-restore dump to Downloads — folder-aware, so even a vault of
+    // empty folders is recoverable if this restore replaces the wrong thing.
+    await new Promise(res=>{try{chrome.runtime.sendMessage({type:"AUTO_BACKUP_NOW"},()=>{void chrome.runtime.lastError;res()})}catch{res()}});
     const r=await Cloud.safeRestore(null);
     if(!r){flash("No backup found on Drive");return}
     if(!restoreVault(r.data,{source:"drive-restore-latest"})){flash("Restore blocked — invalid backup");return}
@@ -3819,7 +3826,10 @@ async function runRestoreLatestFromDrive(){
 function openRestoreLatestFromDriveModal(opts){
   opts=opts||{};
   const localCounts=Cloud.itemCounts();
-  const skipModal=localCounts.total===0&&!opts.forceConfirm;
+  // Skipping confirmation is only safe when the vault holds truly nothing —
+  // zero items AND zero folders. Folder structures are user work; silently
+  // replacing them once destroyed a user's freshly rebuilt organization.
+  const skipModal=localCounts.total===0&&!pvVaultHasAnyStructure()&&!opts.forceConfirm;
   if(skipModal){
     flash("Restoring vault from Drive...");
     void runRestoreLatestFromDrive();
@@ -3830,7 +3840,7 @@ function openRestoreLatestFromDriveModal(opts){
   showModal(`<h3>Restore Latest from Drive</h3>
     <p>This will replace your local data with the most recent backup.</p>
     ${conflictWarn}
-    <p style="font-size:10px;color:var(--gn)">OK Your current data (${localCounts.total} items) will be saved as a safety copy on Drive first.</p>
+    <p style="font-size:10px;color:var(--gn)">OK Your current data (${localCounts.total} items · ${[P,SN,BM,NT,KL,GP,IP,PH,LS].reduce((n,s)=>n+(s?.folders?countItems(s.folders).folders:0),0)} folders) will be saved as a safety copy on Drive first, and a local file backup is written to Downloads/PromptVault-Backups.</p>
     <p style="font-size:10px;color:var(--dm)">For a specific version, use "Browse Backups" instead.</p>
     <div class="brow"><button class="bg-btn" id="grX">${hasLocalChanges?"Keep local":"Cancel"}</button><button class="bp" id="grY">Use Drive backup</button></div>`,mc=>{
     mc.querySelector("#grX").addEventListener("click",closeModal);
