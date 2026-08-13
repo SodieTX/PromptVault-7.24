@@ -4740,11 +4740,10 @@ function rtN(n,dp,selId,expM,mode){
   if(io&&hk)for(const c of n.children)h+=rtN(c,dp+1,selId,expM,mode);return h}
 
 function renderListsHub(){
+  // Deliberately lean: Lists live in their own full-screen workspace, and the
+  // only job of this tab is getting there. No stats, no lectures.
   purge();const m=$("main");if(!m)return;
-  const stats=typeof PVListsModel!=="undefined"?PVListsModel.folderStats(LS?.folders):{folders:0,files:countItems(LS?.folders||{}).prompts||0};
-  const types={bulleted:0,numbered:0,checklist:0,kanban:0,sticky:0};
-  (function walk(n){for(const file of n?.prompts||[])if(types[file.type]!==undefined)types[file.type]++;for(const child of n?.children||[])walk(child)})(LS?.folders);
-  m.innerHTML=`<div style="padding:14px;overflow:auto;flex:1"><div style="border:1px solid var(--bl);border-left:3px solid var(--ls);border-radius:8px;background:var(--sf);padding:14px"><div style="font-size:15px;font-weight:700;color:var(--ls);margin-bottom:4px">Lists &amp; Tasks</div><div style="font-size:10px;color:var(--mu);line-height:1.5;margin-bottom:12px">An independent folder tree for numbered and bulleted lists, checklists, split-column Kanban boards, and sticky notes.</div><button class="ba" id="openLists" style="background:var(--lsd);border-color:var(--ls);color:var(--ls)">${S.expand} Open Lists &amp; Tasks</button><div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:12px"><div class="ins-section"><strong>${stats.files}</strong><div style="font-size:9px;color:var(--dm)">files</div></div><div class="ins-section"><strong>${stats.folders}</strong><div style="font-size:9px;color:var(--dm)">folders</div></div>${Object.entries(types).map(([k,v])=>`<div class="ins-section"><strong>${v}</strong><div style="font-size:9px;color:var(--dm);text-transform:capitalize">${esc(k)}</div></div>`).join("")}</div><div style="font-size:9px;color:var(--dm);margin-top:10px">Kanban follows Compass: horizontally split columns, independent column scrolling, and cards that move within or across columns.</div></div></div>`;
+  m.innerHTML=`<div style="padding:14px;overflow:auto;flex:1"><div style="border:1px solid var(--bl);border-left:3px solid var(--ls);border-radius:8px;background:var(--sf);padding:14px"><div style="font-size:15px;font-weight:700;color:var(--ls);margin-bottom:4px">Lists &amp; Tasks</div><div style="font-size:10px;color:var(--mu);line-height:1.5;margin-bottom:12px">Bulleted and numbered lists, checklists, Kanban boards, and sticky notes.</div><button class="ba" id="openLists" style="background:var(--lsd);border-color:var(--ls);color:var(--ls)">${S.expand} Open Lists &amp; Tasks</button></div></div>`;
   $("openLists")?.addEventListener("click",()=>openFullView("lists"));updTabs();rFtr();
 }
 
@@ -4763,7 +4762,11 @@ function render(){
   purge();const m=$("main"),s2=st(),d2=dt();
   let snapNode=null;const snap=document.querySelector(".snap");if(snap){snapNode=snap;snapNode.remove()}
   // Lean chrome: the editor takes the whole panel; an empty silo shows only its welcome card.
-  const _lean=s2.view==="edit"||(countItems(d2.folders).prompts===0&&!(d2.trash||[]).length&&s2.view!=="trash");
+  // Lean (welcome-card-only) chrome is for a truly virgin silo: no items AND no
+  // folders AND no trash. A folder tree with zero items is still an organized
+  // vault the user built — hiding it reads as data loss, never do that.
+  const _counts=countItems(d2.folders);
+  const _lean=s2.view==="edit"||(_counts.prompts===0&&_counts.folders===0&&!(d2.trash||[]).length&&s2.view!=="trash");
   // Section toolbar (search + filters + collections) is collapsible as a block.
   const _chromeHidden=!!cfg?.secChromeCollapsed;
   let h='';
@@ -5660,7 +5663,7 @@ function rFolder(c){
   h+='<div class="bc">';crumbs.forEach((b,i)=>{if(i)h+='<span class="sep">/</span>';h+=`<span class="c ${i===crumbs.length-1?'cur':''}" data-nav="${b.id}">${esc(b.name)}</span>`});h+='</div>';
   if(f.children?.length){h+='<div class="sf-chips">';f.children.forEach(ch=>{const col=ch.color||"";h+=`<div class="sf-chip" data-nav="${ch.id}"><span style="display:flex;${col?'color:'+col:'color:var(--'+acV()+')'}">${V.f(0,col||undefined)}</span><span>${esc(ch.name)}</span><span style="font-size:8px;color:var(--dm)">${countItems(ch).prompts}</span></div>`});h+='</div>'}
   const label=isP()?"Prompt":isI()?"Image Prompt":isK()?"Skill":isS()?"Clip":isN()?"Note":isG()?"Custom GPT":isPh()?"Photo":isPR()?"Project":"Bookmark";
-  h+=`<div style="display:flex;gap:3px;margin-bottom:5px;flex-wrap:wrap"><button class="ba ba-${ac}" id="newI">${I.plus} New ${label}</button><button class="bs" id="newF" title="Create a folder in the current location">${S.folder} New Folder</button>${(isP()||isS()||isB())?`<button class="bs" id="sectionImport" title="Import files directly into ${label}s">${S.inbox} Import</button>`:''}${isB()?`<button class="bs" id="bookmarkRestore" title="Preview and restore a bookmarks JSON backup">${I.rest} Restore Backup</button>`:''}${(isK()||isG())?`<button class="ba ba-${ac}" id="authorizedImport" style="border-style:dashed" title="Import only files, folders, or text you explicitly provide">${S.inbox} Authorized Import</button>`:''}${isK()?`<button class="bs" id="claudeSkillsPage" title="Open the official Claude Skills page">${I.open} Official Claude Skills</button>`:''}${isS()?`<button class="ba ba-s" id="clipPaste" style="border-style:dashed">${S.clip} Paste</button><button class="ba ba-s" id="upClip" style="border-style:dashed" title="Upload .md/.txt files as clips">${S.inbox} Upload</button>`:''}${isN()?`<button class="ba ba-n" id="upNote" style="border-style:dashed" title="Upload .md/.txt files as notes">${S.inbox} Upload</button>`:''}${isP()?`<button class="ba ba-p" id="promptPaste" style="border-style:dashed">${S.clip} Paste</button>`:''}${isPh()?`<button class="ba ba-${ac}" id="phPaste" style="border-style:dashed" title="Paste an image from the clipboard (or press Ctrl+V)">${S.clip} Paste image</button>`:''}${(isN()||isS())?`<button class="ba ba-${ac}" id="reportBtn" style="border-style:dashed" title="Combine notes & clips into one report">${S.doc} Report</button>`:''}<div class="sort-w"><button class="bs" id="soB">${I.sort}</button><div class="sort-m" id="soM" style="display:${s2.sortOn?'block':'none'}">${[["modified","Modified"],["name","Name"],["created","Created"],["usage","Used"],["custom","Custom"]].map(([k,l])=>`<div class="sort-o ${s2.sort===k?'a':''}" data-s="${k}">${l}</div>`).join("")}</div></div>${isL()?`<button class="bs" id="listModeBtn" title="${s2.listMode==='compact'?'Card view':'Compact view'}">${s2.listMode==='compact'?S.hamburger:S.grid}</button>`:''}${(isP()||isS()||isL()||isPh())?`<button class="bs ${st().bulkMode?'active-bulk':''}" id="bulkBtn" title="Select multiple">${S.checkbox}${isPh()?(st().bulkMode?' Done':' Select'):''}</button>`:''}${isL()?`<button class="bs" id="contentExpandBtn" title="Expand view"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg></button>`:''}</div>`;
+  h+=`<div style="display:flex;gap:3px;margin-bottom:5px;flex-wrap:wrap"><button class="ba ba-${ac}" id="newI">${I.plus} New ${label}</button><button class="bs" id="newF" title="Create a folder in the current location">${S.folder} New Folder</button>${(isP()||isS()||isB())?`<button class="bs" id="sectionImport" title="Import files directly into ${label}s">${S.inbox} Import</button>`:''}${isB()?`<button class="ba ba-b" id="chromeBmImport" title="Bring your Chrome bookmarks (folders and all) into the vault">${S.inbox} Chrome Bookmarks</button><button class="bs" id="bookmarkRestore" title="Preview and restore a bookmarks JSON backup">${I.rest} Restore Backup</button>`:''}${(isK()||isG())?`<button class="ba ba-${ac}" id="authorizedImport" style="border-style:dashed" title="Import only files, folders, or text you explicitly provide">${S.inbox} Authorized Import</button>`:''}${isK()?`<button class="bs" id="claudeSkillsPage" title="Open the official Claude Skills page">${I.open} Official Claude Skills</button>`:''}${isS()?`<button class="ba ba-s" id="clipPaste" style="border-style:dashed">${S.clip} Paste</button><button class="ba ba-s" id="upClip" style="border-style:dashed" title="Upload .md/.txt files as clips">${S.inbox} Upload</button>`:''}${isN()?`<button class="ba ba-n" id="upNote" style="border-style:dashed" title="Upload .md/.txt files as notes">${S.inbox} Upload</button>`:''}${isP()?`<button class="ba ba-p" id="promptPaste" style="border-style:dashed">${S.clip} Paste</button>`:''}${isPh()?`<button class="ba ba-${ac}" id="phPaste" style="border-style:dashed" title="Paste an image from the clipboard (or press Ctrl+V)">${S.clip} Paste image</button>`:''}${(isN()||isS())?`<button class="ba ba-${ac}" id="reportBtn" style="border-style:dashed" title="Combine notes & clips into one report">${S.doc} Report</button>`:''}<div class="sort-w"><button class="bs" id="soB">${I.sort}</button><div class="sort-m" id="soM" style="display:${s2.sortOn?'block':'none'}">${[["modified","Modified"],["name","Name"],["created","Created"],["usage","Used"],["custom","Custom"]].map(([k,l])=>`<div class="sort-o ${s2.sort===k?'a':''}" data-s="${k}">${l}</div>`).join("")}</div></div>${isL()?`<button class="bs" id="listModeBtn" title="${s2.listMode==='compact'?'Card view':'Compact view'}">${s2.listMode==='compact'?S.hamburger:S.grid}</button>`:''}${(isP()||isS()||isL()||isPh())?`<button class="bs ${st().bulkMode?'active-bulk':''}" id="bulkBtn" title="Select multiple">${S.checkbox}${isPh()?(st().bulkMode?' Done':' Select'):''}</button>`:''}${isL()?`<button class="bs" id="contentExpandBtn" title="Expand view"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg></button>`:''}</div>`;
   if((isP()||isS()||isL())&&st().bulkMode&&st().bulkSel.length){
     h+=`<div class="bulk-bar"><span>${st().bulkSel.length} selected</span>${(isP()||isS())?`<button class="bs" id="bulkTag">+ Tags</button>`:''}<button class="bs" id="bulkMv">${I.move} Move</button><button class="bs dng" id="bulkDl">${I.trash} Delete</button><button class="bs" id="bulkX">Clear</button></div>`;
   }
@@ -5694,6 +5697,7 @@ function rFolder(c){
   $("newF")?.addEventListener("click",addFolder);
   $("sectionImport")?.addEventListener("click",()=>{const store=isS()?"snippets":isB()?"bookmarks":"prompts";importPickFiles({store,folder:pvImportDefaultFolder(store)})});
   $("bookmarkRestore")?.addEventListener("click",openBookmarksBackupImport);
+  $("chromeBmImport")?.addEventListener("click",pvImportChromeBookmarksModal);
   c.querySelectorAll("[data-qb]").forEach(el=>el.addEventListener("click",()=>{
     const t=allItems(P.folders).find(x=>x.id===el.dataset.qb);
     if(t)handleUse(t.folderId,t,"inject");
@@ -5748,6 +5752,15 @@ function rFolder(c){
     }catch(e){flash("Cannot read clipboard")}
   });
   $("soB")?.addEventListener("click",()=>{s2.sortOn=!s2.sortOn;render()});
+  // The toolbar wraps, so the sort button can land anywhere in the row; the
+  // dropdown anchors right:0 and can extend past the panel edge. Clamp it
+  // back on-screen after layout.
+  const _soM=$("soM");
+  if(_soM&&s2.sortOn)requestAnimationFrame(()=>{
+    const r=_soM.getBoundingClientRect();
+    if(r.left<4){_soM.style.right="auto";_soM.style.left="0"}
+    else if(r.right>window.innerWidth-4){_soM.style.left="auto";_soM.style.right="0"}
+  });
   $("listModeBtn")?.addEventListener("click",()=>{s2.listMode=isG()?(s2.listMode==="launcher"?"card":s2.listMode==="card"?"compact":"launcher"):(s2.listMode==="compact"?"card":"compact");render()});
   $("bulkBtn")?.addEventListener("click",()=>{st().bulkMode=!st().bulkMode;st().bulkSel=[];render()});
   $("phZip")?.addEventListener("click",()=>pvPhotoBulkZip());
@@ -9816,6 +9829,40 @@ function openBookmarksBackupImport(){
     catch(e){flash("Bookmark backup not recognized: "+e.message)}
   });
   input.click();
+}
+
+// ═══════ CHROME BOOKMARKS IMPORT ═══════
+// Brings the browser's own bookmarks (folder structure intact) into the vault's
+// Bookmarks section through the same merge machinery as backup restores —
+// folders merge by name, bookmarks dedupe by URL within their folder.
+const PV_BM_SYNC_FOLDER_NAME="Prompt Vault"; // the vault→Chrome sync mirror — importing it back would duplicate everything
+function pvImportChromeBookmarksModal(){
+  if(!chrome.bookmarks?.getTree){flash("Chrome bookmarks are unavailable");return}
+  chrome.bookmarks.getTree(tree=>{
+    const countUrls=n=>{let c=n?.url?1:0;for(const ch of n?.children||[])c+=countUrls(ch);return c};
+    const roots=(tree?.[0]?.children||[]).map(node=>({node,count:countUrls(node)})).filter(x=>x.count>0);
+    if(!roots.length){flash("No Chrome bookmarks found");return}
+    showModal(`<h3>Import Chrome Bookmarks</h3>
+      <p style="font-size:10px;color:var(--mu);line-height:1.5">Recreates your Chrome folders inside the vault's Bookmarks section. Bookmarks whose URL already exists in the same folder are skipped, so re-running is safe. The "${PV_BM_SYNC_FOLDER_NAME}" sync folder is excluded automatically.</p>
+      ${roots.map((x,i)=>`<label class="fpi" style="display:flex;gap:7px;align-items:center;padding:5px 6px;cursor:pointer"><input type="checkbox" class="cbm-cb" value="${i}" checked style="accent-color:var(--bk);flex-shrink:0"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(x.node.title||"Bookmarks")}</span><span style="font-size:9px;color:var(--dm)">${x.count} bookmark${x.count===1?"":"s"}</span></label>`).join("")}
+      <div class="brow"><button class="bg-btn" id="cbmX">Cancel</button><button class="bp" id="cbmGo">Import selected</button></div>`,mc=>{
+      mc.querySelector("#cbmX").addEventListener("click",closeModal);
+      mc.querySelector("#cbmGo").addEventListener("click",async()=>{
+        const chosen=[...mc.querySelectorAll(".cbm-cb:checked")].map(cb=>roots[+cb.value].node);
+        if(!chosen.length){flash("Nothing selected");return}
+        const toStore=n=>({
+          id:"cbm_"+n.id,name:n.title||"Folder",color:"",
+          children:(n.children||[]).filter(c=>c.children&&(c.title||"")!==PV_BM_SYNC_FOLDER_NAME).map(toStore),
+          prompts:(n.children||[]).filter(c=>c.url).map(c=>({id:"cbi_"+c.id,title:c.title||c.url,content:"",url:c.url,tags:["chrome-import"],created:c.dateAdded||Date.now(),modified:c.dateAdded||Date.now(),favorited:false,usageCount:0,versions:[]}))
+        });
+        const incoming={folders:{id:"broot",name:"My Bookmarks",children:chosen.filter(n=>(n.title||"")!==PV_BM_SYNC_FOLDER_NAME).map(toStore),prompts:[]},collections:[]};
+        await pvBookmarkSafetySnapshot("chrome-import","Chrome bookmarks");
+        const result=pvMergeBookmarkStore(incoming);
+        save();closeModal();aTab="bookmarks";bSt.sel="broot";bSt.exp.broot=1;
+        flash(`Imported ${result.added} bookmarks from Chrome${result.skipped?` · ${result.skipped} duplicates skipped`:""}`);render();
+      });
+    });
+  });
 }
 
 // ═══════ FULL-STORAGE AUTO-BACKUP RESTORE ═══════

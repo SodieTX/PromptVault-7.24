@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Prompt Vault",
-  "version": "7.25.6",
+  "version": "7.25.7",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyW7NkTKfI54UTlxoPV6aiWkhAXDalvYD+WmPW8kG6q4KCQ9CBL5+pS4JIwUf8ahZt8q82KVZ7q4iAVlV7X//13o8bHp5673VPyWlAqldJSdvjifEDkL7u3xEaT2Oy4T2jyRS6SJw3eeJI6JwDhi71voPuLjajDsmubWM6S3K3MnBBmSM5Zzjvcaa+g/B3xBCmcD+upou4edFj1W4iTyRau35HyP+s1fFxWlcur5TfeiMhXQKg/YEbS2mZet86+dKwaZ633VEZiF0+GPU6MMnya0FvOohlzVBE5duxLT5hPMxrmCicEVYCJBFcHr3Sw4+m+pvVP87m/R74d+lXyPFwQIDAQAB",
   "description": "Prompt library, web clipper, bookmark manager, and note-taking with LLM platform awareness.",
   "permissions": [

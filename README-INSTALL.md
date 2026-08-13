@@ -1,4 +1,4 @@
-# Prompt Vault 7.25.6 — Chrome installation
+# Prompt Vault 7.25.7 — Chrome installation
 
 1. Get the extension folder onto disk in a stable location (clone this repository, or extract a release ZIP — do not load a ZIP directly).
 2. Open `chrome://extensions` in Chrome.
