@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PromptVault Workbench</title>
+<style>
+  :root{--bg:#16161a;--sf:#1f1f25;--bd:#2c2c38;--tx:#e4e2dc;--mu:#8a8790;--dm:#55535e;--ac:#c9a45c;--gn:#5ca46c;--dn:#c45c5c;--sn:#5c8ec4}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--tx);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  body{display:flex;flex-direction:column}
+  .bar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--bd);background:var(--sf);flex-wrap:wrap}
+  .bar h1{font-size:13px;margin:0;font-weight:700;letter-spacing:.3px;display:flex;align-items:center;gap:6px}
+  .bar h1 .dot{width:9px;height:9px;border-radius:50%;background:var(--ac)}
+  select,button{font:inherit;font-size:12px}
+  select{background:var(--bg);color:var(--tx);border:1px solid var(--bd);border-radius:6px;padding:5px 8px}
+  button{border:1px solid var(--bd);background:var(--bg);color:var(--tx);border-radius:6px;padding:6px 11px;cursor:pointer}
+  button:hover{background:var(--sf);border-color:var(--dm)}
+  button.primary{background:var(--ac);border-color:var(--ac);color:#1a1408;font-weight:700}
+  button.primary:hover{filter:brightness(1.08)}
+  button.danger{color:var(--dn);border-color:rgba(196,92,92,.4)}
+  .spacer{flex:1}
+  #status{font-size:11px;color:var(--mu);min-width:120px}
+  #status.ok{color:var(--gn)}
+  #status.err{color:var(--dn)}
+  .agent-box{padding:8px 12px;border-bottom:1px solid var(--bd);background:linear-gradient(180deg,#191922,#14141a)}
+  .agent-head{font-size:11px;font-weight:700;color:var(--ac);letter-spacing:.3px;display:flex;align-items:center;gap:6px}
+  .agent-body{font-size:11px;color:var(--mu);line-height:1.65;margin-top:4px}
+  .agent-body b{color:var(--tx)}
+  .agent-body code{background:var(--sf);padding:1px 5px;border-radius:3px;color:var(--tx);font-size:10px}
+  .agent-body details{margin-top:5px}
+  .agent-body summary{cursor:pointer;color:var(--sn);font-weight:600;font-size:10px}
+  .agent-body .body{margin-top:6px;padding-left:2px}
+  #wbText{flex:1;width:100%;resize:none;border:0;outline:0;background:var(--bg);color:var(--tx);font-family:"SF Mono",Menlo,Consolas,monospace;font-size:12px;line-height:1.55;padding:12px 14px;tab-size:2;white-space:pre}
+  .foot{padding:5px 12px;border-top:1px solid var(--bd);background:var(--sf);font-size:10px;color:var(--dm);display:flex;gap:14px;flex-wrap:wrap}
+</style>
+</head>
+<body>
+  <div class="bar">
+    <h1><span class="dot"></span>PromptVault Workbench</h1>
+    <select id="scope" aria-label="Scope"></select>
+    <button id="reload" title="Discard edits and reload from the vault">↻ Reload</button>
+    <div class="spacer"></div>
+    <span id="status">Loading…</span>
+    <button id="revert" class="danger" title="Restore the vault to the state before your last Save">Revert last save</button>
+    <button id="save" class="primary" title="Write the edited document back into the extension">💾 Save to Vault</button>
+  </div>
+  <div class="agent-box">
+    <div class="agent-head">🤖 AGENT INSTRUCTIONS — you are editing the user's live PromptVault</div>
+    <div class="agent-body">
+      Edit the JSON below, then click <b>💾 Save to Vault</b> (or press Ctrl/Cmd-S). Then stop — the save is what persists your work.
+      &nbsp;·&nbsp; <b>edit</b>: change fields, keep the item's <code>id</code>
+      &nbsp;·&nbsp; <b>add</b>: append an object to a folder's <code>prompts</code> (omit <code>id</code>, one is assigned)
+      &nbsp;·&nbsp; <b>delete</b>: remove the object
+      &nbsp;·&nbsp; <b>organize</b>: move items between <code>prompts</code> arrays, reorder, or add folders under <code>children</code>.
+      Malformed or wrong-shape JSON is <b>refused</b>, never written; every save is <b>revertable</b>. <span id="scopeHint"></span>
+      <details><summary>full format spec</summary><div class="body" id="hintBody"></div></details>
+    </div>
+  </div>
+  <script type="application/json" id="pv-contract">
+{
+  "surface": "PromptVault Workbench",
+  "youAreEditing": "the user's live PromptVault, presented as one editable JSON document; this browser tab IS the extension",
+  "howToSave": ["click the 'Save to Vault' button", "or press Ctrl/Cmd-S", "or call window.pvWorkbench.save()"],
+  "afterSaving": "stop — saving is what persists changes into the vault; the user sees them immediately",
+  "document": {
+    "singleSilo": "{ folders: {id,name,color,children:[...folders],prompts:[...items]}, trash: [], nextId: N, collections: [] }",
+    "wholeVault": "an object keyed by silo name (prompts, imgprompts, snippets, bookmarks, notes, skills, customgpts, photos), each value a silo store as above"
+  },
+  "item": "{ id, title, content, tags: [], url?, platform? } — unlisted fields are preserved verbatim",
+  "operations": {
+    "edit": "change fields but KEEP the item's id",
+    "add": "append an object to a folder's prompts array; omit id and a unique one is assigned",
+    "delete": "remove the object from its prompts array",
+    "organize": "move items between folders' prompts arrays, reorder arrays, or add folders under children"
+  },
+  "safety": "invalid JSON or a missing folders root is refused and nothing is written; ids are made unique on save; the root id is pinned; the prior state is snapshotted and 'Revert last save' restores it; an open side panel reloads live",
+  "api": "window.pvWorkbench = { get(), set(text), save(), reload(), info(), help(), scopes() }"
+}
+  </script>
+  <textarea id="wbText" spellcheck="false" autocomplete="off" autocapitalize="off" wrap="off"></textarea>
+  <div class="foot">
+    <span>This tab IS the extension — <strong>Save to Vault</strong> writes straight into PromptVault's local storage.</span>
+    <span id="footScope"></span>
+  </div>
+  <script src="workbench.js"></script>
+</body>
+</html>

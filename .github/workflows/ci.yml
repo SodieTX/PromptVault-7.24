@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: Tests + bundle drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # npm's prepare hook runs build.mjs, which regenerates vault.js in the
+      # working tree — the drift check below compares against HEAD, so that's fine.
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Node test harness
+        run: npm test
+
+      # vault.js is the bundle Chrome actually loads. AGENTS.md's contract:
+      # it must always match the build.mjs output from src/. Editing src/
+      # without rebuilding (or editing vault.js directly) breaks that.
+      # Line 1 is a build timestamp, so compare from line 2.
+      - name: vault.js matches src/ (no stale bundle)
+        run: |
+          node build.mjs
+          if ! diff <(tail -n +2 vault.js) <(git show HEAD:vault.js | tail -n +2) > /dev/null; then
+            echo "::error::vault.js is stale — run 'npm run build' and commit the regenerated vault.js alongside your src/ changes (see AGENTS.md)."
+            exit 1
+          fi
+          echo "vault.js is in sync with src/"

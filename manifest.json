@@ -1,0 +1,112 @@
+{
+  "manifest_version": 3,
+  "name": "Prompt Vault",
+  "version": "7.24.0",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyW7NkTKfI54UTlxoPV6aiWkhAXDalvYD+WmPW8kG6q4KCQ9CBL5+pS4JIwUf8ahZt8q82KVZ7q4iAVlV7X//13o8bHp5673VPyWlAqldJSdvjifEDkL7u3xEaT2Oy4T2jyRS6SJw3eeJI6JwDhi71voPuLjajDsmubWM6S3K3MnBBmSM5Zzjvcaa+g/B3xBCmcD+upou4edFj1W4iTyRau35HyP+s1fFxWlcur5TfeiMhXQKg/YEbS2mZet86+dKwaZ633VEZiF0+GPU6MMnya0FvOohlzVBE5duxLT5hPMxrmCicEVYCJBFcHr3Sw4+m+pvVP87m/R74d+lXyPFwQIDAQAB",
+  "description": "Prompt library, web clipper, bookmark manager, and note-taking with LLM platform awareness.",
+  "permissions": [
+    "storage",
+    "unlimitedStorage",
+    "sidePanel",
+    "activeTab",
+    "scripting",
+    "downloads",
+    "contextMenus",
+    "tabs",
+    "alarms",
+    "bookmarks",
+    "identity",
+    "favicon",
+    "nativeMessaging"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "oauth2": {
+    "client_id": "34688323068-3930vodj2dqnt6r5ostv9vfi82q17jmo.apps.googleusercontent.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/drive.file"
+    ]
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "adapters.js",
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Open Prompt Vault",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "commands": {
+    "open-palette": {
+      "suggested_key": {
+        "default": "Alt+Shift+V",
+        "mac": "Alt+Shift+V"
+      },
+      "description": "Open Prompt Vault command palette"
+    },
+    "quick-clip": {
+      "suggested_key": {
+        "default": "Alt+Shift+C",
+        "mac": "Alt+Shift+C"
+      },
+      "description": "Quick clip to Inbox"
+    },
+    "take-snip": {
+      "suggested_key": {
+        "default": "Alt+Shift+S",
+        "mac": "Alt+Shift+S"
+      },
+      "description": "Screenshot snip tool"
+    },
+    "inject-last-prompt": {
+      "suggested_key": {
+        "default": "Alt+Shift+L",
+        "mac": "Alt+Shift+L"
+      },
+      "description": "Inject last-used prompt into focused page"
+    },
+    "inject-favorite-1": {
+      "description": "Inject starred prompt #1 (assign a key in chrome://extensions/shortcuts)"
+    },
+    "inject-favorite-2": {
+      "description": "Inject starred prompt #2"
+    },
+    "inject-favorite-3": {
+      "description": "Inject starred prompt #3"
+    },
+    "inject-favorite-4": {
+      "description": "Inject starred prompt #4"
+    },
+    "inject-favorite-5": {
+      "description": "Inject starred prompt #5"
+    }
+  }
+}
