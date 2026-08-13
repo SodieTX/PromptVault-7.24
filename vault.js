@@ -121,7 +121,7 @@ let sSt={sel:"sroot",exp:{sroot:1},view:"list",eId:null,eTi:"",eCo:"",eTg:"",eUr
 let bSt={sel:"broot",exp:{broot:1},view:"list",eId:null,eTi:"",eCo:"",eTg:"",eUrl:"",q:"",sort:"modified",treeOn:1,sortOn:0,colOn:0,toolsOn:0,tagFilter:"",listMode:"card",bulkMode:false,bulkSel:[],collFilter:""};
 let nSt={sel:"nroot",exp:{nroot:1},view:"list",eId:null,eTi:"",eCo:"",eTg:"",eUrl:"",q:"",sort:"modified",treeOn:1,sortOn:0,colOn:0,toolsOn:0,tagFilter:"",listMode:"card",collFilter:""};
 let iPSt={sel:"iroot",exp:{iroot:1},view:"list",eId:null,eTi:"",eCo:"",eTg:"",eUrl:"",ePlat:"midjourney",q:"",sort:"modified",treeOn:1,sortOn:0,colOn:0,toolsOn:0,tagFilter:"",listMode:"card",collFilter:""};
-let gSt={sel:"groot",exp:{groot:1},view:"list",eId:null,eTi:"",eCo:"",eTg:"",eUrl:"",q:"",sort:"modified",treeOn:0,sortOn:0,colOn:0,toolsOn:0,tagFilter:"",listMode:"launcher",bulkMode:false,bulkSel:[],collFilter:""};
+let gSt={sel:"groot",exp:{groot:1},view:"list",eId:null,eTi:"",eCo:"",eTg:"",eUrl:"",q:"",sort:"modified",treeOn:1,sortOn:0,colOn:0,toolsOn:0,tagFilter:"",listMode:"launcher",bulkMode:false,bulkSel:[],collFilter:""};
 let prSt={sel:"projroot",exp:{projroot:1},view:"list",eId:null,eTi:"",eCo:"",eTg:"",eUrl:"",q:"",sort:"modified",treeOn:1,sortOn:0,colOn:0,toolsOn:0,tagFilter:"",listMode:"card",bulkMode:false,bulkSel:[],collFilter:""};
 let chSt={sel:"chroot",exp:{chroot:1},view:"list",eId:null,eTi:"",eCo:"",eTg:"",eUrl:"",ePlat:"",q:"",sort:"modified",treeOn:1,sortOn:0,colOn:0,toolsOn:0,tagFilter:"",listMode:"card",bulkMode:false,bulkSel:[],collFilter:""};
 let phSt={sel:"phroot",exp:{phroot:1},view:"list",eId:null,eTi:"",eCo:"",eTg:"",eUrl:"",q:"",sort:"modified",treeOn:1,sortOn:0,colOn:0,toolsOn:0,tagFilter:"",listMode:"gallery",collFilter:""};
@@ -4739,12 +4739,35 @@ function rtN(n,dp,selId,expM,mode){
   let h=`<div class="tr ${sc}" data-id="${n.id}" style="padding-left:${5+dp*12}px"><span style="width:9px;display:flex;opacity:${hk?1:.2}">${V.ch(io)}</span><span style="display:flex;${ac2}">${V.f(io,col||undefined)}</span><span class="nm">${esc(n.name)}</span>${pc?`<span class="ct">${pc}</span>`:''}</div>`;
   if(io&&hk)for(const c of n.children)h+=rtN(c,dp+1,selId,expM,mode);return h}
 
+let _lsHubExp={lroot:1};
+function pvOpenListsView(fileId){
+  const page="fullview-lists.html"+(fileId?"?file="+encodeURIComponent(fileId):"");
+  try{chrome.windows.create({url:chrome.runtime.getURL(page),type:"popup",width:1100,height:750})}
+  catch(e){chrome.runtime.sendMessage({type:"OPEN_FULLVIEW",page})}
+}
 function renderListsHub(){
-  // Deliberately lean: Lists live in their own full-screen workspace, and the
-  // only job of this tab is getting there. No stats, no lectures.
+  // The tab shows the real folder/file tree; clicking a file opens the
+  // expanded workspace landed on that file. No stats, no lectures.
   purge();const m=$("main");if(!m)return;
-  m.innerHTML=`<div style="padding:14px;overflow:auto;flex:1"><div style="border:1px solid var(--bl);border-left:3px solid var(--ls);border-radius:8px;background:var(--sf);padding:14px"><div style="font-size:15px;font-weight:700;color:var(--ls);margin-bottom:4px">Lists &amp; Tasks</div><div style="font-size:10px;color:var(--mu);line-height:1.5;margin-bottom:12px">Bulleted and numbered lists, checklists, Kanban boards, and sticky notes.</div><button class="ba" id="openLists" style="background:var(--lsd);border-color:var(--ls);color:var(--ls)">${S.expand} Open Lists &amp; Tasks</button></div></div>`;
-  $("openLists")?.addEventListener("click",()=>openFullView("lists"));updTabs();rFtr();
+  const typeIcon={bulleted:"•",numbered:"1.",checklist:"☑",kanban:"▦",sticky:"▧"};
+  const node=(n,dp)=>{
+    const open=!!_lsHubExp[n.id],kids=(n.children||[]).length,files=(n.prompts||[]).length;
+    let h=`<div class="tr" data-lsf="${escAttr(n.id)}" style="padding-left:${5+dp*12}px"><span style="width:9px;display:flex;opacity:${kids||files?1:.2}">${V.ch(open)}</span><span style="display:flex;color:var(--ls)">${V.f(open)}</span><span class="nm">${esc(n.name)}</span>${files?`<span class="ct">${files}</span>`:''}</div>`;
+    if(open){
+      for(const file of n.prompts||[])h+=`<div class="tr" data-lsfile="${escAttr(file.id)}" style="padding-left:${17+dp*12}px" title="Open ${escAttr(file.title)} in the expanded view"><span style="width:12px;text-align:center;color:var(--ls);font-size:9px;flex-shrink:0">${typeIcon[file.type]||"•"}</span><span class="nm">${esc(file.title)}</span></div>`;
+      for(const c of n.children||[])h+=node(c,dp+1);
+    }
+    return h;
+  };
+  m.innerHTML=`<div style="display:flex;flex-direction:column;flex:1;min-height:0">
+    <div style="padding:8px 10px;border-bottom:1px solid var(--bl);display:flex;align-items:center;gap:6px"><span style="font-size:11px;font-weight:700;color:var(--ls)">Lists &amp; Tasks</span><span style="flex:1"></span><button class="bs" id="openLists" title="Open the full workspace">${S.expand} Expand</button></div>
+    <div class="tree-list" style="flex:1;overflow-y:auto;display:block">${node(LS?.folders||{id:"lroot",name:"My Lists & Tasks"},0)||""}</div>
+    <div style="padding:7px 10px;border-top:1px solid var(--bl);font-size:9px;color:var(--dm)">Click any list, board, or note to open it. Create and organize in the expanded view.</div>
+  </div>`;
+  m.querySelectorAll("[data-lsf]").forEach(el=>el.addEventListener("click",()=>{_lsHubExp[el.dataset.lsf]=!_lsHubExp[el.dataset.lsf];render()}));
+  m.querySelectorAll("[data-lsfile]").forEach(el=>el.addEventListener("click",()=>pvOpenListsView(el.dataset.lsfile)));
+  $("openLists")?.addEventListener("click",()=>pvOpenListsView(""));
+  updTabs();rFtr();
 }
 
 function render(){
@@ -11421,7 +11444,11 @@ loadData().then(async ()=>{
     PVViewState.subscribe(vs=>{_vsHydrate(vs);if(typeof render==="function")render()});
   }
   // One-time: flip existing profiles to the GPT launcher view (new default).
-  if(!meta.gptLauncherIntro){meta.gptLauncherIntro=true;gSt.listMode="launcher";gSt.treeOn=0;chrome.storage.local.set({[MK]:meta});}
+  if(!meta.gptLauncherIntro){meta.gptLauncherIntro=true;gSt.listMode="launcher";chrome.storage.local.set({[MK]:meta});}
+  // One-time: earlier builds hid the Custom GPTs folder tree (treeOn:0 default +
+  // launcher intro forcing it), and pv_vs persisted that. Users read a hidden
+  // tree as lost data — flip it back on once, after viewstate hydration.
+  if(!meta.gptTreeRestored){meta.gptTreeRestored=true;gSt.treeOn=1;chrome.storage.local.set({[MK]:meta});}
   // Deep link: sidepanel.html?tab=photos (Photos expanded view) or any silo tab.
   try{
     const _bootTab=new URLSearchParams(location.search).get("tab");
