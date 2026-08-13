@@ -18,6 +18,7 @@
   button.primary{background:var(--ac);border-color:var(--ac);color:#1a1408;font-weight:700}
   button.primary:hover{filter:brightness(1.08)}
   button.danger{color:var(--dn);border-color:rgba(196,92,92,.4)}
+  button.exit{font-weight:700;border-color:rgba(201,164,92,.55);color:var(--ac)}
   .spacer{flex:1}
   #status{font-size:11px;color:var(--mu);min-width:120px}
   #status.ok{color:var(--gn)}
@@ -36,6 +37,7 @@
 </head>
 <body>
   <div class="bar">
+    <button id="exit" class="exit" title="Return to Prompt Vault or close this Workbench tab">&#8592; Back / Exit</button>
     <h1><span class="dot"></span>PromptVault Workbench</h1>
     <select id="scope" aria-label="Scope"></select>
     <button id="reload" title="Discard edits and reload from the vault">↻ Reload</button>

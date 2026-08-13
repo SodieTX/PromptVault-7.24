@@ -187,6 +187,15 @@ function fvPopUndo(cb) {
 }
 function fvHasUndo() { return _fvUndo.length > 0; }
 
+// Full-screen extension pages are frequently opened as popups or fresh tabs. Give every
+// surface one predictable escape hatch: navigate back when there is history, otherwise
+// close the extension-owned window/tab.
+function fvExitView() {
+  if (history.length > 1) history.back();
+  else window.close();
+}
+document.querySelector("[data-fv-exit]")?.addEventListener("click", fvExitView);
+
 // ═══ META BUMP — fullview saves participate in snapshot rotation ═══
 function fvBumpMeta() {
   chrome.storage.local.get(["pv_m"], function(res) {
