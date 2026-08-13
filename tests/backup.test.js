@@ -1,0 +1,97 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import vm from 'node:vm';
+
+const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+const read = rel => readFileSync(path.join(root, rel), 'utf8');
+
+function loadBackupGuard() {
+  const context = vm.createContext({});
+  context.globalThis = context;
+  vm.runInContext(read('backup-guard.js'), context, { filename: 'backup-guard.js' });
+  const guard = context.PVBackupGuard;
+  assert.ok(guard, 'PVBackupGuard failed to load');
+  return guard;
+}
+
+// ── The perpetuity contract: backups must include EVERY storage key, even for
+// silos that do not exist yet, because the dump copies storage wholesale
+// instead of enumerating known stores. ──
+test('storage dump includes unknown future silos verbatim', () => {
+  const G = loadBackupGuard();
+  const all = {
+    pv_p: { folders: { id: 'root', prompts: [{ id: 'i_1' }], children: [] } },
+    pv_some_future_silo: { folders: { id: 'xroot', prompts: [{ id: 'i_9' }], children: [] } },
+    pv_cfg: { theme: 'dark' },
+    totally_unknown_key: [1, 2, 3],
+    pv_drag_image: { huge: 'transient blob' }
+  };
+  const dump = G.buildStorageDump(all, '9.99.9', 'test');
+  assert.equal(dump._format, 'prompt-vault-storage-dump');
+  assert.deepEqual(dump.storage.pv_some_future_silo, all.pv_some_future_silo);
+  assert.deepEqual(dump.storage.totally_unknown_key, [1, 2, 3]);
+  assert.deepEqual(dump.storage.pv_cfg, { theme: 'dark' });
+  assert.ok(!('pv_drag_image' in dump.storage), 'transient drag stash must not be persisted');
+});
+
+test('dump item counter sees any folder-shaped store, present or future', () => {
+  const G = loadBackupGuard();
+  const dump = G.buildStorageDump({
+    pv_ph: { folders: { id: 'phroot', prompts: [{ id: 'a' }, { id: 'b' }], children: [{ id: 'c1', prompts: [{ id: 'c' }], children: [] }] } },
+    pv_new_thing: { folders: { id: 'n', prompts: [{ id: 'd' }], children: [] } },
+    pv_ws: [{ id: 'w1' }],
+    pv_cfg: { theme: 'dark' }
+  }, '1', 'test');
+  assert.equal(G.dumpItemCount(dump), 5);
+  assert.equal(G.dumpItemCount(G.buildStorageDump({ pv_cfg: {} }, '1', 'test')), 0);
+});
+
+// ── The empty-vault guard is what keeps a fresh reinstall from destroying the
+// only surviving copy of the user's data. ──
+test('background worker refuses to overwrite backups with an empty vault', () => {
+  const src = read('background.js');
+  assert.match(src, /chrome\.storage\.local\.get\(null/, 'auto-backup must dump ALL of storage, not an enumerated list');
+  assert.match(src, /items === 0.*skipped: true|if \(items === 0\)/s, 'auto-backup must skip when the vault is empty');
+  assert.match(src, /"backup-guard\.js"/, 'backup-guard.js must be loaded by the service worker');
+  assert.match(src, /AUTO_BACKUP_NOW/, 'on-demand backup message handler missing');
+  assert.match(src, /pv-auto-backup/, 'scheduled backup alarm missing');
+  assert.match(src, /onInstalled[\s\S]{0,500}pvRunAutoBackup/, 'every version update must snapshot the vault');
+});
+
+test('rolling filenames cover latest, weekday slots, and update snapshots', () => {
+  const G = loadBackupGuard();
+  const wed = new Date('2026-08-12T12:00:00Z');
+  const names = G.autoBackupFilenames(wed, 'scheduled');
+  assert.ok(names.some(n => n.endsWith('prompt-vault-backup-latest.json')));
+  assert.equal(names.filter(n => /backup-(sun|mon|tue|wed|thu|fri|sat)\.json$/.test(n)).length, 1);
+  const onUpdate = G.autoBackupFilenames(wed, 'update');
+  assert.ok(onUpdate.some(n => n.endsWith('prompt-vault-backup-on-update.json')));
+  for (const n of [...names, ...onUpdate]) assert.ok(n.startsWith('PromptVault-Backups/'));
+});
+
+test('side panel recognizes and restores storage dumps', () => {
+  const vaultSrc = read('vault.js');
+  assert.match(vaultSrc, /prompt-vault-storage-dump/, 'import parser must recognize auto-backup dumps');
+  assert.match(vaultSrc, /function showStorageDumpRestore/, 'dedicated restore modal missing');
+  assert.match(vaultSrc, /isStorageDump.*showStorageDumpRestore/s, 'importParsedText must route dumps to the restore modal');
+  assert.match(vaultSrc, /emptyRestore/, 'empty-vault welcome card must offer Restore Backup');
+  assert.match(vaultSrc, /openVaultBackupRestore/, 'restore picker missing');
+});
+
+// ── Extension identity: the manifest "key" pins the extension ID, which is what
+// chrome.storage.local is scoped to. Changing or dropping it silently orphans
+// every user's data. It must never change. ──
+test('manifest key (extension identity) is pinned forever', () => {
+  const manifest = JSON.parse(read('manifest.json'));
+  assert.equal(
+    manifest.key,
+    'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyW7NkTKfI54UTlxoPV6aiWkhAXDalvYD+WmPW8kG6q4KCQ9CBL5+pS4JIwUf8ahZt8q82KVZ7q4iAVlV7X//13o8bHp5673VPyWlAqldJSdvjifEDkL7u3xEaT2Oy4T2jyRS6SJw3eeJI6JwDhi71voPuLjajDsmubWM6S3K3MnBBmSM5Zzjvcaa+g/B3xBCmcD+upou4edFj1W4iTyRau35HyP+s1fFxWlcur5TfeiMhXQKg/YEbS2mZet86+dKwaZ633VEZiF0+GPU6MMnya0FvOohlzVBE5duxLT5hPMxrmCicEVYCJBFcHr3Sw4+m+pvVP87m/R74d+lXyPFwQIDAQAB',
+    'The manifest "key" pins the extension ID that chrome.storage is scoped to. ' +
+    'Changing it orphans every existing vault. Do not change it — ever.'
+  );
+  for (const perm of ['storage', 'unlimitedStorage', 'downloads', 'alarms']) {
+    assert.ok(manifest.permissions.includes(perm), `backup system requires the "${perm}" permission`);
+  }
+});

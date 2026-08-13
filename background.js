@@ -7,7 +7,8 @@ importScripts(
   "bookmark-sync.js",
   "drive-shared.js",
   "drive-sync-bg.js",
-  "pv-bridge.js"
+  "pv-bridge.js",
+  "backup-guard.js"
 );
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 
@@ -1303,6 +1304,11 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
     return true;
   }
 
+  if (msg.type === "AUTO_BACKUP_NOW") {
+    pvRunAutoBackup("manual").then(r => respond({ success: !r.skipped, ...r }));
+    return true;
+  }
+
   if (msg.type === "OPEN_URL") {
     chrome.tabs.create({ url: msg.url, active: true });
     respond({ success: true });
@@ -1477,9 +1483,55 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
   }
 });
 
+// ── Automatic on-disk safety backups (see backup-guard.js for the contract) ──
+// Full storage dumps written to Downloads/PromptVault-Backups. Files survive
+// extension removal, so a remove-and-reinstall can always be restored.
+async function pvRunAutoBackup(reason) {
+  try {
+    const all = await new Promise(res => chrome.storage.local.get(null, r => res(r || {})));
+    const version = chrome.runtime.getManifest().version;
+    const dump = PVBackupGuard.buildStorageDump(all, version, reason);
+    const items = PVBackupGuard.dumpItemCount(dump);
+    // An empty vault must never overwrite existing backup files: right after a
+    // reinstall, those files are the only surviving copy of the user's data.
+    if (items === 0) { console.log("[PV] auto-backup skipped — vault is empty (" + reason + ")"); return { skipped: true, items: 0 }; }
+    const json = JSON.stringify(dump);
+    const url = toDataUrl(json, "application/json");
+    let written = 0;
+    for (const filename of PVBackupGuard.autoBackupFilenames(new Date(), reason)) {
+      await new Promise(res => chrome.downloads.download(
+        { url, filename, saveAs: false, conflictAction: "overwrite" },
+        () => { if (!chrome.runtime.lastError) written++; res(); }
+      ));
+    }
+    const meta = (await new Promise(res => chrome.storage.local.get(["pv_m"], r => res(r || {})))).pv_m || {};
+    meta.lastAutoBackupAt = Date.now();
+    meta.lastAutoBackupItems = items;
+    meta.lastAutoBackupReason = reason;
+    await new Promise(res => chrome.storage.local.set({ pv_m: meta }, res));
+    console.log(`[PV] auto-backup (${reason}): ${items} items, ${written} files`);
+    return { skipped: false, items, written };
+  } catch (e) {
+    console.warn("[PV] auto-backup failed:", e && e.message);
+    return { skipped: true, error: e && e.message };
+  }
+}
+// Throttled variant for startup wakes — at most one scheduled-style run per 20h.
+async function pvAutoBackupIfDue(reason) {
+  const res = await new Promise(r => chrome.storage.local.get(["pv_m"], x => r(x || {})));
+  const last = res.pv_m?.lastAutoBackupAt || 0;
+  if (Date.now() - last < 20 * 3600 * 1000) return;
+  return pvRunAutoBackup(reason);
+}
+
 // ── Lifecycle ──
-chrome.runtime.onInstalled.addListener(() => { buildFolderMenus(); bmSyncInit(); });
-chrome.runtime.onStartup.addListener(() => { buildFolderMenus(); bmSyncInit(); });
+chrome.runtime.onInstalled.addListener(details => {
+  buildFolderMenus(); bmSyncInit();
+  // "update" fires with the vault data intact (same extension ID), so this
+  // snapshots the vault on-disk at every single version transition.
+  pvRunAutoBackup(details && details.reason ? details.reason : "install");
+});
+chrome.runtime.onStartup.addListener(() => { buildFolderMenus(); bmSyncInit(); pvAutoBackupIfDue("startup"); });
 // Belt-and-suspenders: any write to a vault tree key refreshes the right-click menus,
 // even when the write came from Drive restore, full-view windows, or quick-save paths
 // that never send REBUILD_MENUS. Debounced so bulk imports build once.
@@ -1566,8 +1618,10 @@ chrome.commands.onCommand.addListener((cmd) => {
 
 // ── Backup alarm ──
 chrome.alarms.create("bk-check", { periodInMinutes: 360 });
+chrome.alarms.create("pv-auto-backup", { periodInMinutes: 720 });
 chrome.alarms.onAlarm.addListener(a => {
   if (a.name === "bk-check") chrome.runtime.sendMessage({ type: "BACKUP_REMINDER" }).catch(() => {});
+  if (a.name === "pv-auto-backup") pvRunAutoBackup("scheduled");
   if (a.name === "pv-reconnect") pvbConnect();
 });
 

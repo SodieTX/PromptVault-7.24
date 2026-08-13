@@ -3923,6 +3923,15 @@ function renderSettings(){
     <button class="bs" id="trustReviewBtn" style="margin-top:8px">Review trust setup</button>
   </details></div>`;
 
+  // ── Automatic safety backups — full storage dumps written outside the extension ──
+  const _abAt=meta?.lastAutoBackupAt?new Date(meta.lastAutoBackupAt).toLocaleString():"";
+  h+=`<div class="sec"><div class="sec-title">🛟 Automatic safety backups</div>
+    <div style="font-size:10px;color:var(--mu);line-height:1.6;margin-bottom:6px">Prompt Vault writes a <strong>complete</strong> copy of the vault — every section, folder, collection, and setting — to <strong>Downloads / PromptVault-Backups</strong> twice a day, on every version update, and on demand. These are ordinary files on your computer, so they survive removing or reinstalling the extension. An empty vault never overwrites them.</div>
+    <div style="font-size:10px;color:${_abAt?"var(--gn)":"var(--dn)"};margin-bottom:6px">${_abAt?`Last backup: ${esc(_abAt)} · ${meta.lastAutoBackupItems||0} items (${esc(meta.lastAutoBackupReason||"scheduled")})`:"No automatic backup has run yet — click Back up now."}</div>
+    <div style="display:flex;gap:5px;flex-wrap:wrap"><button class="bs" id="autoBackupNow">${I.dl} Back up now</button><button class="bs" id="autoBackupRestore">&#128735; Restore from backup file…</button></div>
+    <div style="font-size:9px;color:var(--dm);margin-top:5px">To restore after a reinstall: open any empty section &rarr; <strong>Restore Backup</strong> &rarr; pick <code>prompt-vault-backup-latest.json</code>. Full-resolution photo originals travel with manual full exports; automatic backups keep every photo's thumbnail, organization, and source link for re-fetching.</div>
+  </div>`;
+
   // ── Improvement notes — structured bullets with migration from the legacy paragraph ──
   const improvementNotes=normalizeImprovementNotes();
   h+=`<div class="sec"><div class="sec-title">📌 Improvement notes</div>
@@ -4427,6 +4436,15 @@ function renderSettings(){
   $("deviceName")?.addEventListener("blur",e=>{meta.deviceName=(e.target.value||"").trim();chrome.storage.local.set({[MK]:meta});flash("Device name saved")});
   $("faviconsDisabledTog")?.addEventListener("change",e=>{cfg.faviconsDisabled=e.target.checked;save();renderSettings();flash(e.target.checked?"Site icons hidden":"Site icons shown")});
   $("pvBridgeTog")?.addEventListener("change",e=>{cfg.pvBridgeEnabled=e.target.checked;save();renderSettings();flash(e.target.checked?"PV bridge enabled":"PV bridge disabled")});
+  $("autoBackupNow")?.addEventListener("click",()=>{
+    flash("Backing up…");
+    try{chrome.runtime.sendMessage({type:"AUTO_BACKUP_NOW"},r=>{
+      void chrome.runtime.lastError;
+      if(r?.success){meta.lastAutoBackupAt=Date.now();meta.lastAutoBackupItems=r.items;meta.lastAutoBackupReason="manual";flash(`Backed up ${r.items} items to Downloads/PromptVault-Backups`);renderSettings()}
+      else flash(r?.items===0?"Nothing to back up — vault is empty":"Backup failed — see the service worker console");
+    })}catch{flash("Backup failed — extension worker unavailable")}
+  });
+  $("autoBackupRestore")?.addEventListener("click",openVaultBackupRestore);
   const _improvementNotesSave=debounce(saveImprovementNotes,400);
   document.querySelectorAll("[data-imp-text]").forEach(el=>el.addEventListener("input",e=>{const n=meta.improvementNotes.find(x=>x.id===e.target.dataset.impText);if(n){n.text=e.target.value;n.modified=Date.now();_improvementNotesSave()}}));
   document.querySelectorAll("[data-imp-del]").forEach(el=>el.addEventListener("click",()=>{meta.improvementNotes=meta.improvementNotes.filter(x=>x.id!==el.dataset.impDel);saveImprovementNotes();renderSettings()}));
@@ -5655,7 +5673,7 @@ function rFolder(c){
   if(!f.prompts?.length&&!f.children?.length){
     const totalAll=countItems(P.folders).prompts+countItems(SN.folders).prompts+countItems(BM.folders).prompts+countItems(NT.folders).prompts+countItems(KL.folders).prompts+countItems(GP.folders).prompts+countItems(IP.folders).prompts;
     if(s2.sel===rId()&&totalAll===0){
-      h+=`<div class="empty-guide"><div class="empty-icon" style="font-size:24px;margin-bottom:8px">&#9889;</div><div style="font-size:12px;font-weight:600;color:var(--tx);margin-bottom:4px">Welcome to Prompt Vault</div>Your vault is empty. Start with an item or organize first with an empty folder.<div class="empty-action"><button class="bp" id="emptyNew">${I.plus} New ${label}</button><button class="bs" id="emptyFolder">${S.folder} New Folder</button>${siloHasTemplates(aTab)?`<button class="bs" id="emptyTpl">&#128218; Browse Templates</button>`:""}</div><div class="empty-hint" style="text-align:left;max-width:280px;margin:10px auto 0;line-height:1.7">${S.bolt} Press <kbd style="background:var(--hv);padding:1px 4px;border-radius:3px;font-size:8px">Alt+Shift+V</kbd> on any AI chat page for the quick palette<br>${S.clip} Highlight text on any page &rarr; right-click &rarr; <strong>Save clip</strong><br>${S.pin} Right-click any page &rarr; <strong>Bookmark in Prompt Vault</strong><br><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> <kbd style="background:var(--hv);padding:1px 4px;border-radius:3px;font-size:8px">Ctrl+K</kbd> searches everything</div></div>`;
+      h+=`<div class="empty-guide"><div class="empty-icon" style="font-size:24px;margin-bottom:8px">&#9889;</div><div style="font-size:12px;font-weight:600;color:var(--tx);margin-bottom:4px">Welcome to Prompt Vault</div>Your vault is empty. Start with an item, organize first with an empty folder — or bring back everything from a backup.<div class="empty-action"><button class="bp" id="emptyNew">${I.plus} New ${label}</button><button class="bs" id="emptyFolder">${S.folder} New Folder</button><button class="bs" id="emptyRestore" title="Restore a complete vault from Downloads/PromptVault-Backups or any Prompt Vault export">&#128735; Restore Backup</button>${siloHasTemplates(aTab)?`<button class="bs" id="emptyTpl">&#128218; Browse Templates</button>`:""}</div><div class="empty-hint" style="margin-top:6px">Reinstalled or updated? Automatic backups live in <strong>Downloads / PromptVault-Backups</strong> — click Restore Backup and pick <strong>prompt-vault-backup-latest.json</strong>.</div><div class="empty-hint" style="text-align:left;max-width:280px;margin:10px auto 0;line-height:1.7">${S.bolt} Press <kbd style="background:var(--hv);padding:1px 4px;border-radius:3px;font-size:8px">Alt+Shift+V</kbd> on any AI chat page for the quick palette<br>${S.clip} Highlight text on any page &rarr; right-click &rarr; <strong>Save clip</strong><br>${S.pin} Right-click any page &rarr; <strong>Bookmark in Prompt Vault</strong><br><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> <kbd style="background:var(--hv);padding:1px 4px;border-radius:3px;font-size:8px">Ctrl+K</kbd> searches everything</div></div>`;
     }else{
       const tabHint=isS()?`<div class="empty-hint" style="margin-top:6px">Tip: AI responses have a &#128190; save button — look for the gold icon on any AI chat page</div>`:"";
       h+=`<div class="empty-guide"><div class="empty-icon" style="font-size:16px">&#128193;</div>No items yet<div class="empty-hint">Click <strong>+ New ${label}</strong> to create one</div>${tabHint}</div>`;
@@ -5680,6 +5698,7 @@ function rFolder(c){
   }));
   $("emptyNew")?.addEventListener("click",addItem);
   $("emptyFolder")?.addEventListener("click",addFolder);
+  $("emptyRestore")?.addEventListener("click",openVaultBackupRestore);
   $("emptyTpl")?.addEventListener("click",()=>{meta._tplSilo=aTab;meta._tplCat="";aTab="templates";render()});
   $("authorizedImport")?.addEventListener("click",()=>openAuthorizedImport(isK()?"skills":"customgpts"));
   $("claudeSkillsPage")?.addEventListener("click",openOfficialClaudeSkills);
@@ -9797,6 +9816,56 @@ function openBookmarksBackupImport(){
   input.click();
 }
 
+// ═══════ FULL-STORAGE AUTO-BACKUP RESTORE ═══════
+// Counterpart of the background worker's automatic dumps (backup-guard.js).
+// Restoring writes every stored key back and reloads the panel, so every
+// section — including ones added after the backup shipped — comes back.
+function pvDumpStoreView(dump){
+  const s=dump?.storage||{};
+  return{prompts:s.pv_p,imgprompts:s.pv_ip,snippets:s.pv_s,bookmarks:s.pv_b,notes:s.pv_n,skills:s.pv_k,customgpts:s.pv_g,photos:s.pv_ph,lists:s.pv_lists};
+}
+function showStorageDumpRestore(dump,fileName){
+  if(!(dump?._format==="prompt-vault-storage-dump"&&dump.storage&&typeof dump.storage==="object")){flash("Backup file not recognized");return}
+  const cur=pvVaultItemCounts({prompts:P,imgprompts:IP,snippets:SN,bookmarks:BM,notes:NT,skills:KL,customgpts:GP,photos:PH,lists:LS});
+  const inc=pvVaultItemCounts(pvDumpStoreView(dump));
+  const labels={prompts:"Prompts",imgprompts:"Image Prompts",snippets:"Clips",bookmarks:"Bookmarks",notes:"Notes",skills:"Skills",customgpts:"Custom GPTs",photos:"Photos",lists:"Lists"};
+  const when=dump.createdAt?new Date(dump.createdAt).toLocaleString():"unknown time";
+  const rows=Object.keys(labels).map(k=>`<div class="rc-diff-row"><span>${labels[k]}</span><span>${cur[k]||0}</span><span>${inc[k]||0}</span><span></span></div>`).join("");
+  showModal(`<h3>Restore Complete Vault Backup</h3>
+    <p style="font-size:10px;color:var(--mu)">${esc(fileName||"backup file")} · saved ${esc(when)}${dump.appVersion?` · Prompt Vault ${esc(dump.appVersion)}`:""}</p>
+    <div class="rc-diff"><div class="rc-diff-row rc-diff-h"><span></span><span>Current</span><span>Backup</span><span></span></div>${rows}</div>
+    <p style="font-size:9px;color:var(--dm)">This restores <strong>everything</strong> — every section, folder structure, collections, settings, and workspaces — exactly as they were when the backup was written. The current vault is backed up to Downloads/PromptVault-Backups first.</p>
+    <div class="brow"><button class="bg-btn" id="sdX">Cancel</button><button class="bdn" id="sdGo">Restore everything</button></div>`,mc=>{
+    mc.querySelector("#sdX").addEventListener("click",closeModal);
+    mc.querySelector("#sdGo").addEventListener("click",()=>{
+      showModal(`<h3 style="color:var(--dn)">Replace the whole vault?</h3><p>All current sections will be replaced by the backup (${inc.total} items). A safety copy of the current vault is written to Downloads/PromptVault-Backups before anything changes.</p><div class="brow"><button class="bg-btn" id="sdRX">Cancel</button><button class="bdn" id="sdRY">Yes, restore backup</button></div>`,mx=>{
+        mx.querySelector("#sdRX").addEventListener("click",closeModal);
+        mx.querySelector("#sdRY").addEventListener("click",()=>{
+          const doRestore=()=>chrome.storage.local.set(dump.storage,()=>{
+            if(chrome.runtime.lastError){flash("Restore failed: "+chrome.runtime.lastError.message);return}
+            location.reload();
+          });
+          // Best-effort pre-restore snapshot of the current state; never blocks the restore.
+          try{chrome.runtime.sendMessage({type:"AUTO_BACKUP_NOW"},()=>{void chrome.runtime.lastError;doRestore()})}catch{doRestore()}
+        });
+      });
+    });
+  });
+}
+function openVaultBackupRestore(){
+  const input=document.createElement("input");input.type="file";input.accept=".json,application/json";
+  input.addEventListener("change",async()=>{
+    const file=input.files?.[0];if(!file)return;
+    try{
+      const text=await file.text();const payload=typeof pvParseLenientJson==="function"?pvParseLenientJson(text):JSON.parse(text);
+      if(payload?._format==="prompt-vault-storage-dump"){showStorageDumpRestore(payload,file.name);return}
+      // Older manual exports and Drive backups keep working through the import wizard.
+      importParsedText(text,file.name);
+    }catch(e){flash("Backup not recognized: "+e.message)}
+  });
+  input.click();
+}
+
 // ═══════ FEATURE: SMART IMPORT WIZARD ═══════
 
 // ── Format parsers — each returns {format:string, items:[{title,content,tags?,description?,url?,platform?}]} ──
@@ -9838,6 +9907,11 @@ function parseImportFile(text,fileName){
   if(ext==="json"||(typeof pvLooksLikeJson==="function"?pvLooksLikeJson(text):(text.trim().startsWith("{")||text.trim().startsWith("[")))){
     try{
       const j=typeof pvParseLenientJson==="function"?pvParseLenientJson(text):JSON.parse(text);
+      // Automatic on-disk backup (full storage dump from backup-guard.js) —
+      // recognized before anything else so a reinstall can restore everything.
+      if(j?._format==="prompt-vault-storage-dump"&&j.storage&&typeof j.storage==="object"&&!Array.isArray(j.storage)){
+        return{format:"Prompt Vault Auto-Backup (complete vault)",isStorageDump:true,data:j,items:extractPVItems(pvDumpStoreView(j))}
+      }
       // Prompt Vault full backup (has .prompts.folders structure)
       const valid=d=>(d&&d.folders&&typeof d.folders.id==="string");
       const bookmarkStore=pvBookmarksFromPayload(j);
@@ -10018,6 +10092,9 @@ function importParsedText(text,fileName,options={}){
   }
   const parsed=parseImportFile(text,fileName||"pasted.txt");
   if(parsed.error){flash(parsed.error);return false}
+  // Full storage dumps restore whole sections (photos, lists, settings) that the
+  // per-item preview cannot represent — route them before the item-count gate.
+  if(parsed.isStorageDump){showStorageDumpRestore(parsed.data,fileName||"backup file");return true}
   if(!parsed.items||!parsed.items.length){flash("No importable items found");return false}
   if(parsed.isPromptSheet){showPromptSheetPreview(parsed,fileName||"pasted CSV");return true}
   if(parsed.isBookmarksBackup&&options.store==="bookmarks"){showBookmarksRestoreFromParsed(parsed.data,fileName||"pasted backup");return true}
