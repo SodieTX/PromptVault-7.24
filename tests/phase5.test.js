@@ -14,6 +14,16 @@ function model(){
   return context.globalThis.out;
 }
 
+test('vault bootstrap declares the Lists store before startup reads it',()=>{
+  const vault=read('vault.js');
+  const declaration=vault.match(/let P=null[^;]+;/)?.[0];
+  assert.ok(declaration,'central vault store declaration is present');
+  const context={globalThis:{}};
+  vm.runInNewContext(declaration+'\n;globalThis.out=LS;',context);
+  assert.equal(context.globalThis.out,null);
+  assert.ok(vault.indexOf('LS=null')<vault.indexOf('lists:LS'),'Lists binding precedes backup/count reads');
+});
+
 test('lists model normalizes each file type and moves kanban cards across columns',()=>{
   const M=model(),store=M.normalizeStore();
   for(const type of ['bulleted','numbered','checklist','kanban','sticky'])store.folders.prompts.push(M.createFile(type,type));

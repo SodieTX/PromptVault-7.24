@@ -113,7 +113,7 @@ const WALLPAPER_PRESETS=[
 ];
 const DEFAULT_CFG={platforms:[...DEFAULT_PLATFORMS],autoDetect:true,starredTags:{prompts:[],snippets:[],bookmarks:[],notes:[],skills:[],customgpts:[],imgprompts:[],photos:[],chats:[]},tagColors:{},disabledPlatforms:[],archiveEnabled:false,mjcCustom:{},vaultLockEnabled:false,vaultLockHash:"",vaultLockSalt:"",vaultLockKdf:"",captureEnabled:false,captureBlockedDomains:[],captureAllowedDomains:[],faviconsDisabled:false,pvBridgeEnabled:true,tabsCollapsed:false,secChromeCollapsed:false,bannerCollapsed:false,workspaces:[],activeWorkspace:"",bookmarkSyncMode:"vault-only",theme:"dark",background:"none",backgroundCustom:"",cloudPullOnStartup:true,cloudProvider:"google-drive",quickAccessFolders:[],tabOrder:["tabP","tabI","tabS","tabB","tabN","tabK","tabCC","tabG","tabPH","tabLS","tabW"]};
 
-let P=null,SN=null,BM=null,NT=null,KL=null,GP=null,IP=null,PH=null,PRJ=null,CH=null,WS=null,meta=null,cfg=null,UC=null;
+let P=null,SN=null,BM=null,NT=null,KL=null,GP=null,IP=null,PH=null,LS=null,PRJ=null,CH=null,WS=null,meta=null,cfg=null,UC=null;
 let aTab="prompts"; // prompts|imgprompts|snippets|bookmarks|notes|skills|customgpts|photos|claudecmds|workspace|templates|settings
 let pSt={sel:"root",exp:{root:1},view:"list",eId:null,eTi:"",eCo:"",eTg:"",eUrl:"",ePlat:"",q:"",sort:"modified",treeOn:1,sortOn:0,colOn:0,platFilter:"",toolsOn:0,tagFilter:"",listMode:"card",platBarOn:0,collFilter:"",bulkMode:false,bulkSel:[]};
 let kSt={sel:"kroot",exp:{kroot:1},view:"list",eId:null,eTi:"",eCo:"",eTg:"",eUrl:"",q:"",sort:"modified",treeOn:1,sortOn:0,colOn:0,toolsOn:0,tagFilter:"",listMode:"card",collFilter:""};
