@@ -895,7 +895,16 @@ function buildItem(store,title,content,tags,extra){
 function findFolder(n,id){if(n.id===id)return n;for(const c of(n.children||[])){const f=findFolder(c,id);if(f)return f}return null}
 function findParent(n,t,p=null){if(n.id===t)return p;for(const c of(n.children||[])){const f=findParent(c,t,n);if(f)return f}return null}
 function getDepth(n,r){let d=0,c=n;while(c&&c.id!==r.id){const p=findParent(r,c.id);if(!p)break;d++;c=p}return d}
-function countItems(n){let p=(n.prompts||[]).length,f=(n.children||[]).length;for(const c of(n.children||[])){const x=countItems(c);p+=x.prompts;f+=x.folders}return{prompts:p,folders:f}}
+function countItems(n){
+  // Counts are used by the shared header/footer and onboarding before a user opens
+  // any particular silo. A partial legacy tree must therefore degrade to zero, not
+  // take every section down while startup validation repairs the stored shape.
+  if(!n||typeof n!=="object")return{prompts:0,folders:0};
+  const children=Array.isArray(n.children)?n.children.filter(c=>c&&typeof c==="object"):[];
+  let p=Array.isArray(n.prompts)?n.prompts.length:0,f=children.length;
+  for(const c of children){const x=countItems(c);p+=x.prompts;f+=x.folders}
+  return{prompts:p,folders:f};
+}
 function searchAll(q,n,path="",platFilter="",tagFilter=""){let r=[];const ql=q.toLowerCase(),p2=path?path+" / "+n.name:n.name;
   for(const p of(n.prompts||[])){
     if(platFilter&&p.platform!==platFilter)continue;
@@ -2521,6 +2530,11 @@ async function loadData(){
         UC=newUC;
       }
       if(!UC.pills)UC.pills={};if(!UC.subs)UC.subs={};if(!UC.groups)UC.groups={};if(!UC.archive)UC.archive=[];
+      // Validate every tree before any shared counter, photo cleanup, onboarding, or
+      // render path can read it. Older/partial profiles may have a root object but be
+      // missing its arrays (or contain an invalid child); merely checking `.folders`
+      // above is not sufficient.
+      const _startupDataRepaired=validateAll(false);
       [P,SN,BM,NT,KL,GP,IP,PH,LS,PRJ,CH].forEach(x=>x.trash=x.trash||[]);
       // ── Prompt-chain self-heal (non-destructive) ──
       // Runs on every load against whatever shape the data arrived in — a hand-edited CSV, a
@@ -2572,6 +2586,7 @@ async function loadData(){
       // The self-heal above mutates P/cfg. Without persisting, the migration flag never
       // sticks and it would re-run every load; deferred so it lands after loadData resolves.
       if(_chainDirty)setTimeout(()=>{try{save()}catch(e){/* deferred */}},0);
+      if(_startupDataRepaired)setTimeout(()=>{try{save()}catch(e){/* deferred */}},0);
       // Ensure clips "Inbox" folder for quick capture
       if(!SN.folders.children.find(c=>c.id==="s_inbox")){SN.folders.children.unshift({id:"s_inbox",name:"Inbox",children:[],prompts:[],color:""})}
       const ps=res.pv_pending_snippet,pb=res.pv_pending_bookmark,pk=res.pv_pending_skill;
@@ -9372,6 +9387,9 @@ function validateStore(store,rootId,name){
       if(typeof p.content!=="string"&&!p.url){p.content="";fixed=true}
       return true;
     });
+    const before=n.children.length;
+    n.children=n.children.filter(ch=>ch&&typeof ch==="object");
+    if(n.children.length!==before)fixed=true;
     n.children.forEach(fixNode);
   }
   fixNode(store.folders);
@@ -9398,11 +9416,11 @@ function validateStore(store,rootId,name){
   }
   return{store,fixed};
 }
-function validateAll(){
+function validateAll(persist=true){
   let anyFixed=false;
-  const stores=[[P,"root","My Prompts"],[IP,"iroot","My Image Prompts"],[SN,"sroot","My Snippets"],[BM,"broot","My Bookmarks"],[NT,"nroot","My Notes"],[KL,"kroot","My Skills"],[GP,"groot","My Custom GPTs"]];
+  const stores=[[P,"root","My Prompts"],[IP,"iroot","My Image Prompts"],[SN,"sroot","My Snippets"],[BM,"broot","My Bookmarks"],[NT,"nroot","My Notes"],[KL,"kroot","My Skills"],[GP,"groot","My Custom GPTs"],[PH,"phroot","My Photos"],[LS,"lroot","My Lists & Tasks"],[PRJ,"projroot","My Projects"],[CH,"chroot","My Chats"]];
   const results=stores.map(([s,id,name])=>validateStore(s,id,name));
-  P=results[0].store;IP=results[1].store;SN=results[2].store;BM=results[3].store;NT=results[4].store;KL=results[5].store;GP=results[6].store;
+  P=results[0].store;IP=results[1].store;SN=results[2].store;BM=results[3].store;NT=results[4].store;KL=results[5].store;GP=results[6].store;PH=results[7].store;LS=results[8].store;PRJ=results[9].store;CH=results[10].store;
   anyFixed=results.some(r=>r.fixed);
   if(sanitizeConfigColors())anyFixed=true;
   if(pruneSectionPanels())anyFixed=true;
@@ -9418,7 +9436,7 @@ function validateAll(){
       if(nonPrint/sample.length>0.15){console.warn("Vault: corrupted skill detected:",p.title,"(id:",p.id,") — binary content, needs reimport");p._corrupted=true;anyFixed=true}
     }
   });
-  if(anyFixed){console.warn("Vault: data validation repaired issues");save()}
+  if(anyFixed){console.warn("Vault: data validation repaired issues");if(persist)save()}
   return anyFixed;
 }
 
