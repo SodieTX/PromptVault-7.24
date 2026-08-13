@@ -133,6 +133,13 @@ const PVListsModel=(()=>{
     hit.col.cards=[];
     file.modified=now();return true;
   }
+  /** Add one more sub-column to an already-split column (KanbanTool style). */
+  function addSubColumn(file,colId,title){
+    const hit=findColumn(file,colId);
+    if(!hit||!(hit.col.children||[]).length||hit.depth>=KANBAN_MAX_SPLIT_DEPTH)return false;
+    hit.col.children.push({id:uid("col"),title:(title||"").trim()||hit.col.title+" · "+(hit.col.children.length+1),cards:[],children:[],collapsed:false});
+    file.modified=now();return true;
+  }
   /** Merge a split column back: children removed, their cards pool into it. */
   function unsplitColumn(file,colId){
     const hit=findColumn(file,colId);
@@ -158,5 +165,5 @@ const PVListsModel=(()=>{
   }
   function findCard(file,cardId){let hit=null;walkColumns(file,col=>{if(hit)return;const card=(col.cards||[]).find(x=>x.id===cardId);if(card)hit={card,col}});return hit}
   function removeFolder(root,id){const i=(root.children||[]).findIndex(x=>x.id===id);if(i>=0){const f=root.children[i];if((f.children||[]).length||(f.prompts||[]).length)return false;root.children.splice(i,1);return true}for(const child of root.children||[])if(removeFolder(child,id))return true;return false}
-  return{KEY,TYPES:[...TYPES],KANBAN_MAX_SPLIT_DEPTH,CARD_FIELD_DEFS,STATUS_COLORS,clone,uid,defaultStore,normalizeStore,normalizeKanbanSettings,findFolder,findFile,folderStats,createFile,normalizeItem,normalizeCard,normalizeColumn,move,moveFile,walkColumns,findColumn,leafColumns,columnCardCount,splitColumn,unsplitColumn,moveCard,findCard,removeFolder};
+  return{KEY,TYPES:[...TYPES],KANBAN_MAX_SPLIT_DEPTH,CARD_FIELD_DEFS,STATUS_COLORS,clone,uid,defaultStore,normalizeStore,normalizeKanbanSettings,findFolder,findFile,folderStats,createFile,normalizeItem,normalizeCard,normalizeColumn,move,moveFile,walkColumns,findColumn,leafColumns,columnCardCount,splitColumn,addSubColumn,unsplitColumn,moveCard,findCard,removeFolder};
 })();

@@ -48,6 +48,17 @@ test('columns split into sub-columns up to three levels deep, then refuse', () =
   assert.equal(M.findColumn(file, 'c1').col.children.length, 0);
 });
 
+test('split columns accept additional sub-columns; leaves refuse them', () => {
+  const M = loadModel();
+  const file = board(M).folders.prompts[0];
+  assert.equal(M.addSubColumn(file, 'c1', 'Extra'), false, 'unsplit columns take no sub-columns');
+  M.splitColumn(file, 'c1', 'L', 'R');
+  assert.ok(M.addSubColumn(file, 'c1', 'Mid'), 'a group grows one sub-column at a time');
+  const c1 = M.findColumn(file, 'c1').col;
+  assert.equal(c1.children.length, 3);
+  assert.equal(c1.children[2].title, 'Mid');
+});
+
 test('cards move only into leaf columns, wherever they nest', () => {
   const M = loadModel();
   const file = board(M).folders.prompts[0];
