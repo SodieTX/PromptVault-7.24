@@ -1486,6 +1486,31 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
 // ── Automatic on-disk safety backups (see backup-guard.js for the contract) ──
 // Full storage dumps written to Downloads/PromptVault-Backups. Files survive
 // extension removal, so a remove-and-reinstall can always be restored.
+
+// Write a file without leaving a download-tray/history entry: erase the
+// DownloadItem once it completes (erase removes history only — the file stays).
+// Scheduled backups run twice a day and the first photo mirror writes one file
+// per photo; without this the tray would drown in backup noise.
+function pvSilentDownload(opts) {
+  return new Promise(resolve => {
+    chrome.downloads.download(opts, id => {
+      if (chrome.runtime.lastError || id === undefined) { resolve(false); return; }
+      const finish = ok => { try { chrome.downloads.onChanged.removeListener(listener); } catch (e) { /* gone */ } if (ok) chrome.downloads.erase({ id }, () => resolve(true)); else resolve(false); };
+      const listener = delta => {
+        if (delta.id !== id || !delta.state) return;
+        if (delta.state.current === "complete") finish(true);
+        else if (delta.state.current === "interrupted") finish(false);
+      };
+      chrome.downloads.onChanged.addListener(listener);
+      // data: URLs often complete before the listener attaches — check once.
+      chrome.downloads.search({ id }, items => {
+        const it = items && items[0];
+        if (it && it.state === "complete") finish(true);
+        else if (it && it.state === "interrupted") finish(false);
+      });
+    });
+  });
+}
 async function pvRunAutoBackup(reason) {
   try {
     const all = await new Promise(res => chrome.storage.local.get(null, r => res(r || {})));
@@ -1499,10 +1524,7 @@ async function pvRunAutoBackup(reason) {
     const url = toDataUrl(json, "application/json");
     let written = 0;
     for (const filename of PVBackupGuard.autoBackupFilenames(new Date(), reason)) {
-      await new Promise(res => chrome.downloads.download(
-        { url, filename, saveAs: false, conflictAction: "overwrite" },
-        () => { if (!chrome.runtime.lastError) written++; res(); }
-      ));
+      if (await pvSilentDownload({ url, filename, saveAs: false, conflictAction: "overwrite" })) written++;
     }
     const meta = (await new Promise(res => chrome.storage.local.get(["pv_m"], r => res(r || {})))).pv_m || {};
     meta.lastAutoBackupAt = Date.now();
@@ -1551,10 +1573,7 @@ async function pvBackupPhotoOriginals() {
     if (!blob) continue; // thumb-only photo — nothing local to mirror
     const filename = PVBackupGuard.photoOriginalFilename(p, blob.type || p.mime);
     const url = await pvBlobToDataURL(blob);
-    const ok = await new Promise(r => chrome.downloads.download(
-      { url, filename, saveAs: false, conflictAction: "overwrite" },
-      () => r(!chrome.runtime.lastError)
-    ));
+    const ok = await pvSilentDownload({ url, filename, saveAs: false, conflictAction: "overwrite" });
     if (ok) { index[p.id] = { bytes: blob.size, file: filename }; mirrored++; }
   }
   if (mirrored) {

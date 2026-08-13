@@ -9876,7 +9876,7 @@ function openPhotoOriginalsReattach(){
   input.webkitdirectory=true;input.setAttribute("webkitdirectory","");
   input.addEventListener("change",async()=>{
     const files=[...input.files];if(!files.length)return;
-    let attached=0,already=0,unmatched=0;
+    let attached=0,already=0,unmatched=0;const attachedIds=[];
     for(const file of files){
       if(!/^image\//.test(file.type||"")&&!/\.(jpe?g|png|webp|gif|avif|svg|img)$/i.test(file.name))continue;
       const id=typeof PVBackupGuard!=="undefined"?PVBackupGuard.photoIdFromFilename(file.name):file.name.replace(/\.[^.]+$/,"");
@@ -9885,9 +9885,20 @@ function openPhotoOriginalsReattach(){
       const existing=await pvImgGet(id).catch(()=>null);
       if(existing){already++;continue}
       await pvImgPut(id,file);
-      item.hasBlob=true;attached++;
+      item.hasBlob=true;attached++;attachedIds.push(id);
     }
-    if(attached)save();
+    if(attached){
+      save();
+      // Restores often land on a machine whose Downloads folder has no mirror
+      // files yet, while the restored index still claims these photos are
+      // mirrored. Clearing their entries makes the next backup pass re-mirror
+      // them here (same-machine re-attach just overwrites identical files).
+      chrome.storage.local.get(["pv_photo_backup_index"],res=>{
+        const idx=res.pv_photo_backup_index||{};
+        attachedIds.forEach(id=>delete idx[id]);
+        chrome.storage.local.set({pv_photo_backup_index:idx});
+      });
+    }
     flash(`Photo originals: ${attached} re-attached${already?` · ${already} already present`:""}${unmatched?` · ${unmatched} without a matching photo`:""}`);
     render();
   });

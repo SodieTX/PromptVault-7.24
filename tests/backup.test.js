@@ -113,6 +113,19 @@ test('worker mirrors photo originals and the panel can re-attach them', () => {
   assert.match(read('sidepanel.html'), /backup-guard\.js/, 'side panel must load the shared backup helpers');
 });
 
+test('automatic writes are silent and re-attach heals the mirror index', () => {
+  const bg = read('background.js');
+  assert.match(bg, /function pvSilentDownload/, 'silent download helper missing');
+  assert.match(bg, /chrome\.downloads\.erase/, 'history entries must be erased so backups do not flood the tray');
+  const backupFn = bg.slice(bg.indexOf('async function pvRunAutoBackup'), bg.indexOf('async function pvAutoBackupIfDue'));
+  assert.match(backupFn, /pvSilentDownload/, 'storage dumps must download silently');
+  const mirrorFn = bg.slice(bg.indexOf('async function pvBackupPhotoOriginals'));
+  assert.match(mirrorFn, /pvSilentDownload/, 'photo mirror must download silently');
+  const vaultSrc = read('vault.js');
+  const reattach = vaultSrc.slice(vaultSrc.indexOf('function openPhotoOriginalsReattach'));
+  assert.match(reattach.slice(0, 3000), /delete idx\[id\]/, 're-attach must clear mirrored-index entries so a new machine re-mirrors');
+});
+
 // ── Extension identity: the manifest "key" pins the extension ID, which is what
 // chrome.storage.local is scoped to. Changing or dropping it silently orphans
 // every user's data. It must never change. ──
