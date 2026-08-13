@@ -37,6 +37,8 @@ const jsFiles = [
   'fullview-clips.js',
   'fullview-commands.js',
   'fullview-prompts.js',
+  'lists-model.js',
+  'fullview-lists.js',
   'workbench.js',
   'pv-bridge.js',
   'pv-images-db.js',

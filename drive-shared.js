@@ -11,6 +11,7 @@
     KK = "pv_k",
     GK = "pv_g",
     IK = "pv_ip",
+    LSK = "pv_lists",
     CHK = "pv_ch",
     PHK = "pv_ph",
     MK = "pv_m",
@@ -45,7 +46,7 @@
     return n;
   }
 
-  function itemCountsFromStores(P, SN, BM, NT, KL, GP, IP, PRJ, CH, WS, files) {
+  function itemCountsFromStores(P, SN, BM, NT, KL, GP, IP, PRJ, CH, WS, files, LS) {
     const prompts = P?.folders ? countTree(P.folders) : 0;
     const imgprompts = IP?.folders ? countTree(IP.folders) : 0;
     const skills = KL?.folders ? countTree(KL.folders) : 0;
@@ -57,9 +58,10 @@
     const chats = CH?.folders ? countTree(CH.folders) : 0;
     const workspaces = countWsNodes(WS);
     const filesCount = files?.folders ? countTree(files.folders) : 0;
+    const lists = LS?.folders ? countTree(LS.folders) : 0;
     const total =
       prompts + imgprompts + skills + snippets + bookmarks + notes + customgpts +
-      projects + chats + workspaces + filesCount;
+      projects + chats + workspaces + filesCount + lists;
     return {
       prompts,
       imgprompts,
@@ -72,6 +74,7 @@
       chats,
       workspaces,
       files: filesCount,
+      lists,
       total,
     };
   }
@@ -100,8 +103,8 @@
     return { P, SN, BM, NT, KL, GP, IP, CH, WS, PRJ };
   }
 
-  function buildVaultBackupPayload(P, SN, BM, NT, KL, GP, IP, cfg, uc, baskets, meta, CH, WS, PRJ, files, PH) {
-    const counts = itemCountsFromStores(P, SN, BM, NT, KL, GP, IP, PRJ, CH, WS, files);
+  function buildVaultBackupPayload(P, SN, BM, NT, KL, GP, IP, cfg, uc, baskets, meta, CH, WS, PRJ, files, PH, LS) {
+    const counts = itemCountsFromStores(P, SN, BM, NT, KL, GP, IP, PRJ, CH, WS, files, LS);
     const ucClean =
       uc && typeof uc === "object" && !Array.isArray(uc) ? uc : {};
     const body = {
@@ -124,6 +127,7 @@
         bookmarks: counts.bookmarks,
         notes: counts.notes,
         customgpts: counts.customgpts,
+        lists: counts.lists,
         total: counts.total,
       },
     };
@@ -132,6 +136,7 @@
     if (PRJ && typeof PRJ === "object" && !Array.isArray(PRJ)) body.projects = PRJ;
     if (files && typeof files === "object" && !Array.isArray(files)) body.files = files;
     if (PH && typeof PH === "object" && !Array.isArray(PH)) body.photos = PH;
+    if (LS && typeof LS === "object" && !Array.isArray(LS)) body.lists = LS;
     if (baskets !== undefined && baskets !== null && typeof baskets === "object") {
       body.imgBuilderBaskets = baskets;
     }
@@ -447,7 +452,7 @@
       { keepDaily: DEFAULT_KEEP_DAILY, keepWeekly: DEFAULT_KEEP_WEEKLY }
     );
 
-    const keys = [PK, SK, BK, NK, KK, GK, IK, PHK, CHK, MK, CK, UCK, BSK, WSK, PRK, FK];
+    const keys = [PK, SK, BK, NK, KK, GK, IK, PHK, LSK, CHK, MK, CK, UCK, BSK, WSK, PRK, FK];
     const res = await chrome.storage.local.get(keys);
     const cfg = res[CK] || {};
     if (!cfg.driveConnected) {
@@ -496,7 +501,7 @@
         ucRaw && typeof ucRaw === "object" && !Array.isArray(ucRaw) ? ucRaw : {};
       const baskets = res[BSK];
       const meta = res[MK] || {};
-      const counts = itemCountsFromStores(P, SN, BM, NT, KL, GP, IP, PRJ, CH, WS, files);
+      const counts = itemCountsFromStores(P, SN, BM, NT, KL, GP, IP, PRJ, CH, WS, files, res[LSK]);
 
       if (counts.total === 0) {
         const error = force
@@ -535,7 +540,7 @@
       }
 
       const fid = await http.findOrCreateMainFolder(MAIN);
-      const payload = buildVaultBackupPayload(P, SN, BM, NT, KL, GP, IP, cfg, uc, baskets, meta, CH, WS, PRJ, files, res[PHK]);
+      const payload = buildVaultBackupPayload(P, SN, BM, NT, KL, GP, IP, cfg, uc, baskets, meta, CH, WS, PRJ, files, res[PHK], res[LSK]);
       const json = JSON.stringify(payload);
 
       const latestName = "prompt-vault-backup.json";
@@ -559,6 +564,7 @@
           bookmarks: counts.bookmarks,
           notes: counts.notes,
           customgpts: counts.customgpts,
+          lists: counts.lists,
           total: counts.total,
         },
         gdWorkerError: null,
@@ -586,7 +592,7 @@
   }
 
   globalThis.PVDrive = {
-    STORAGE: { PK, SK, BK, NK, KK, GK, IK, PHK, CHK, MK, CK, UCK, BSK, WSK, PRK, FK },
+    STORAGE: { PK, SK, BK, NK, KK, GK, IK, PHK, LSK, CHK, MK, CK, UCK, BSK, WSK, PRK, FK },
     get BACKUP_VERSION() {
       return currentBackupSchemaVersion();
     },

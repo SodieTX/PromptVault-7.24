@@ -69,13 +69,14 @@ function buildFolderMenus() {
   clearTimeout(menuBuildTimer);
   menuBuildTimer = setTimeout(() => { menuBuildPending = false; }, 5000);
   chrome.contextMenus.removeAll(() => {
-    chrome.storage.local.get(["pv_p", "pv_s", "pv_b", "pv_k", "pv_n", "pv_ph"], res => {
+    chrome.storage.local.get(["pv_p", "pv_s", "pv_b", "pv_k", "pv_n", "pv_ph", "pv_cfg"], res => {
       const P = res.pv_p;
       const SN = res.pv_s;
       const BM = res.pv_b;
       const KL = res.pv_k;
       const NT = res.pv_n;
       const PH = res.pv_ph;
+      const cfg = res.pv_cfg || {};
 
       // ── Inject menu (editable fields — prompts) ──
       chrome.contextMenus.create({ id: "inj-root", title: "\u26a1 Inject from Prompt Vault", contexts: ["editable"] });
@@ -182,6 +183,25 @@ function buildFolderMenus() {
         chrome.contextMenus.create({ id: "img-rsep", type: "separator", parentId: "img-root", contexts: ["all"] });
         for (const child of phRoot.children) {
           addFolderMenu(child, "img-root", "img", ["all"]);
+        }
+      }
+
+      // User-curated shortcuts: only marked Clips, Notes, and Photos folders are
+      // repeated here, so users can save directly without traversing a tree.
+      const quickRefs = Array.isArray(cfg.quickAccessFolders) ? cfg.quickAccessFolders : [];
+      const quickResolved = [];
+      for (const ref of quickRefs) {
+        const root = ref?.silo === "snippets" ? SN?.folders : ref?.silo === "notes" ? NT?.folders : ref?.silo === "photos" ? PH?.folders : null;
+        const folder = root && ref.id ? findFolder(root, ref.id) : null;
+        if (folder) quickResolved.push({ silo: ref.silo, id: ref.id, name: folder.name || "Folder" });
+      }
+      if (quickResolved.length) {
+        chrome.contextMenus.create({ id: "qa-root", title: "\u26a1 Prompt Vault Quick Access", contexts: ["all"] });
+        for (const ref of quickResolved.slice(0, 20)) {
+          const prefix = ref.silo === "snippets" ? "snip" : ref.silo === "notes" ? "note" : "img";
+          const icon = ref.silo === "snippets" ? "\ud83d\udccb" : ref.silo === "notes" ? "\ud83d\udcdd" : "\ud83d\uddbc";
+          const contexts = ref.silo === "photos" ? ["all"] : ["selection"];
+          chrome.contextMenus.create({ id: `qa-${prefix}-save-${ref.id}`, title: `${icon} ${ref.name}`, parentId: "qa-root", contexts });
         }
       }
 
@@ -714,7 +734,9 @@ async function getPageMeta(tabId) {
 
 // ── Context menu click handler ──
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-  const id = info.menuItemId;
+  let id = info.menuItemId;
+  // Quick Access aliases deliberately reuse the normal, tested save handlers.
+  if (typeof id === "string" && id.startsWith("qa-")) id = id.slice(3);
 
   // ── Inject prompt into active field ──
   if (typeof id === "string" && id.startsWith("inj-p::")) {
@@ -1464,7 +1486,7 @@ chrome.runtime.onStartup.addListener(() => { buildFolderMenus(); bmSyncInit(); }
 let _menuChangeTimer = null;
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local") return;
-  if (!["pv_p", "pv_s", "pv_b", "pv_k", "pv_n", "pv_ph"].some(k => k in changes)) return;
+  if (!["pv_p", "pv_s", "pv_b", "pv_k", "pv_n", "pv_ph", "pv_cfg"].some(k => k in changes)) return;
   clearTimeout(_menuChangeTimer);
   _menuChangeTimer = setTimeout(buildFolderMenus, 800);
 });

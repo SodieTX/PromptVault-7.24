@@ -22,7 +22,7 @@
 // Backup schema version: pv-schema-version.js (side panel + service worker). Fallback:
 if(typeof globalThis!=="undefined"&&!globalThis.PV_VAULT_EXPORT_VERSION)globalThis.PV_VAULT_EXPORT_VERSION="7.2";
 
-const PK="pv_p",SK="pv_s",BK="pv_b",NK="pv_n",KK="pv_k",GK="pv_g",IK="pv_ip",PHK="pv_ph",PRK="pv_pr",CHK="pv_ch",WSK="pv_ws",MK="pv_m",CK="pv_cfg",SP="pv_sn_",UCK="pv_uc";
+const PK="pv_p",SK="pv_s",BK="pv_b",NK="pv_n",KK="pv_k",GK="pv_g",IK="pv_ip",PHK="pv_ph",LSK="pv_lists",PRK="pv_pr",CHK="pv_ch",WSK="pv_ws",MK="pv_m",CK="pv_cfg",SP="pv_sn_",UCK="pv_uc";
 /** Cloud backends with a working implementation (Settings UI lists these only). */
 const SUPPORTED_CLOUD_PROVIDERS=["google-drive"];
 /** Bookmark section-panel display modes — canonical vocabulary (see docs/DATA_AUTHORITY.md). */
@@ -111,7 +111,7 @@ const WALLPAPER_PRESETS=[
   {id:"navy",name:"Navy",css:"linear-gradient(150deg,#0a0e18 0%,#0f1522 50%,#080c14 100%)"},
   {id:"umber",name:"Umber",css:"linear-gradient(155deg,#1a1612 0%,#221c16 50%,#14100d 100%)"}
 ];
-const DEFAULT_CFG={platforms:[...DEFAULT_PLATFORMS],autoDetect:true,starredTags:{prompts:[],snippets:[],bookmarks:[],notes:[],skills:[],customgpts:[],imgprompts:[],photos:[],chats:[]},tagColors:{},disabledPlatforms:[],archiveEnabled:false,mjcCustom:{},vaultLockEnabled:false,vaultLockHash:"",vaultLockSalt:"",vaultLockKdf:"",captureEnabled:false,captureBlockedDomains:[],captureAllowedDomains:[],faviconsDisabled:false,pvBridgeEnabled:true,tabsCollapsed:false,secChromeCollapsed:false,bannerCollapsed:false,workspaces:[],activeWorkspace:"",bookmarkSyncMode:"vault-only",theme:"dark",background:"none",backgroundCustom:"",cloudPullOnStartup:true,cloudProvider:"google-drive",tabOrder:["tabP","tabI","tabS","tabB","tabN","tabK","tabG","tabPH","tabCC","tabW"]};
+const DEFAULT_CFG={platforms:[...DEFAULT_PLATFORMS],autoDetect:true,starredTags:{prompts:[],snippets:[],bookmarks:[],notes:[],skills:[],customgpts:[],imgprompts:[],photos:[],chats:[]},tagColors:{},disabledPlatforms:[],archiveEnabled:false,mjcCustom:{},vaultLockEnabled:false,vaultLockHash:"",vaultLockSalt:"",vaultLockKdf:"",captureEnabled:false,captureBlockedDomains:[],captureAllowedDomains:[],faviconsDisabled:false,pvBridgeEnabled:true,tabsCollapsed:false,secChromeCollapsed:false,bannerCollapsed:false,workspaces:[],activeWorkspace:"",bookmarkSyncMode:"vault-only",theme:"dark",background:"none",backgroundCustom:"",cloudPullOnStartup:true,cloudProvider:"google-drive",quickAccessFolders:[],tabOrder:["tabP","tabI","tabS","tabB","tabN","tabK","tabCC","tabG","tabPH","tabLS","tabW"]};
 
 let P=null,SN=null,BM=null,NT=null,KL=null,GP=null,IP=null,PH=null,PRJ=null,CH=null,WS=null,meta=null,cfg=null,UC=null;
 let aTab="prompts"; // prompts|imgprompts|snippets|bookmarks|notes|skills|customgpts|photos|claudecmds|workspace|templates|settings
@@ -134,6 +134,37 @@ const _TRID={prompts:"root",imgprompts:"iroot",skills:"kroot",snippets:"sroot",n
 function isP(){return aTab==="prompts"}function isI(){return aTab==="imgprompts"}function isK(){return aTab==="skills"}function isS(){return aTab==="snippets"}function isB(){return aTab==="bookmarks"}function isN(){return aTab==="notes"}function isG(){return aTab==="customgpts"}function isPh(){return aTab==="photos"}function isPR(){return aTab==="projects"}function isCh(){return aTab==="chats"}function isCC(){return aTab==="claudecmds"}function isWs(){return aTab==="workspace"}function isDevNotes(){return aTab==="devnotes"}function isL(){return isB()||isG()||isPR()||isCh()}
 const _TAC={prompts:"p",imgprompts:"i",skills:"k",snippets:"s",notes:"n",customgpts:"g",bookmarks:"b",photos:"ph"};function acC(){return _TAC[aTab]||"b"}
 const _TAV={prompts:"ac",imgprompts:"ip",skills:"sk",snippets:"sn",notes:"nt",customgpts:"gp",bookmarks:"bk",photos:"ph"};function acV(){return _TAV[aTab]||"bk"}
+
+// Phase 4: folders marked here surface in both Prompt Vault's blank-area menu and
+// Chrome's extension context menu. References are IDs, so renames stay in sync.
+const PV_QUICK_FOLDER_SILOS={snippets:{store:()=>SN,state:()=>sSt,root:"sroot",label:"Clips"},notes:{store:()=>NT,state:()=>nSt,root:"nroot",label:"Notes"},photos:{store:()=>PH,state:()=>phSt,root:"phroot",label:"Photos"}};
+function pvQuickFolderRefs(){if(!cfg)return[];cfg.quickAccessFolders=Array.isArray(cfg.quickAccessFolders)?cfg.quickAccessFolders:[];return cfg.quickAccessFolders}
+function pvQuickFolderIsMarked(silo,id){return pvQuickFolderRefs().some(x=>x&&x.silo===silo&&x.id===id)}
+function pvQuickFolderToggle(silo,id){
+  if(!PV_QUICK_FOLDER_SILOS[silo]||!id)return false;
+  const refs=pvQuickFolderRefs(),i=refs.findIndex(x=>x&&x.silo===silo&&x.id===id);
+  if(i>=0)refs.splice(i,1);else refs.push({silo,id});
+  save();return i<0;
+}
+function pvQuickFolderResolved(){
+  const out=[];
+  for(const ref of pvQuickFolderRefs()){
+    const meta2=PV_QUICK_FOLDER_SILOS[ref?.silo],store=meta2?.store();
+    const folder=store?.folders?findFolder(store.folders,ref.id):null;
+    if(folder)out.push({silo:ref.silo,id:ref.id,name:folder.name,label:meta2.label});
+  }
+  return out;
+}
+function pvQuickFolderGo(ref){
+  const meta2=PV_QUICK_FOLDER_SILOS[ref.silo];if(!meta2)return;
+  aTab=ref.silo;const state=meta2.state();state.sel=ref.id;state.exp[meta2.root]=1;state.exp[ref.id]=1;state.view="list";render();
+}
+function claudeToolsHeader(active){
+  return `<div class="claude-tools-switch"><span class="claude-tools-name">Claude Tools</span><span class="claude-tools-hint">Commands and Skills share Claude's slash/backslash workflow</span><button class="claude-tools-link${active==="commands"?' active-cc':''}" data-ct-go="commands">Commands</button><button class="claude-tools-link${active==="skills"?' active-sk':''}" data-ct-go="skills">Skills</button></div>`;
+}
+function wireClaudeToolsHeader(root=document){
+  root.querySelectorAll?.("[data-ct-go]").forEach(btn=>btn.addEventListener("click",()=>{aTab=btn.dataset.ctGo==="commands"?"claudecmds":"skills";render()}));
+}
 
 // ── Platform detection ──
 function detectPlatform(url){
@@ -1036,7 +1067,7 @@ function folderColorFor(fid){const d2=dt();const f=findFolder(d2.folders,fid);re
 // ── Find bookmark anywhere in tree by id ──
 function findItemGlobal(node,id){for(const p of(node.prompts||[]))if(p.id===id)return p;for(const c of(node.children||[])){const f=findItemGlobal(c,id);if(f)return f}return null}
 // ── Collection helpers (work for Prompts and Bookmarks) ──
-function collData(){return isP()?P:isI()?IP:isK()?KL:isS()?SN:isN()?NT:isG()?GP:BM}
+function collData(){return isP()?P:isI()?IP:isK()?KL:isS()?SN:isN()?NT:isG()?GP:isPh()?PH:BM}
 function getCollections(){return collData().collections||[]}
 function saveCollections(cols){collData().collections=cols;save()}
 function newCollId(){return"cl_"+(Date.now().toString(36))}
@@ -1563,7 +1594,7 @@ function isValidVaultPayload(d) {
   if (vaultPayloadHasUnsafeKeys(d)) return false;
   if (d.version !== undefined && typeof d.version !== "string") return false;
   if (d.exportedAt !== undefined && typeof d.exportedAt !== "string") return false;
-  const stores = ["prompts", "snippets", "bookmarks", "notes", "skills", "customgpts", "photos", "chats", "projects", "files"];
+  const stores = ["prompts", "snippets", "bookmarks", "notes", "skills", "customgpts", "photos", "lists", "chats", "projects", "files"];
   let validStores = 0;
   for (let s = 0; s < stores.length; s++) {
     const k = stores[s];
@@ -1602,7 +1633,7 @@ function describeVaultPayloadRejection(d) {
   if (vaultPayloadHasUnsafeKeys(d)) return "payload contains unsafe keys (__proto__, constructor, or prototype)";
   if (d.version !== undefined && typeof d.version !== "string") return "version must be a string when present";
   if (d.exportedAt !== undefined && typeof d.exportedAt !== "string") return "exportedAt must be a string when present";
-  const stores = ["prompts", "snippets", "bookmarks", "notes", "skills", "customgpts", "photos", "chats", "projects", "files"];
+  const stores = ["prompts", "snippets", "bookmarks", "notes", "skills", "customgpts", "photos", "lists", "chats", "projects", "files"];
   let validStores = 0;
   for (let s = 0; s < stores.length; s++) {
     const k = stores[s];
@@ -1649,9 +1680,10 @@ const GD={
       prompts:countItems(P.folders).prompts,imgprompts:countItems(IP.folders).prompts,skills:countItems(KL.folders).prompts,
       snippets:countItems(SN.folders).prompts,bookmarks:countItems(BM.folders).prompts,
       notes:countItems(NT.folders).prompts,customgpts:countItems(GP.folders).prompts,
+      lists:LS?.folders?countItems(LS.folders).prompts:0,
       projects:PRJ?.folders?countItems(PRJ.folders).prompts:0,chats:CH?.folders?countItems(CH.folders).prompts:0,workspaces:wsN,
       files:(typeof PVF!=="undefined"&&PVF.D&&PVF.D.folders)?countItems(PVF.D.folders).prompts:0,
-      get total(){return this.prompts+this.imgprompts+this.skills+this.snippets+this.bookmarks+this.notes+this.customgpts+this.projects+this.chats+this.workspaces+this.files}
+      get total(){return this.prompts+this.imgprompts+this.skills+this.snippets+this.bookmarks+this.notes+this.customgpts+this.lists+this.projects+this.chats+this.workspaces+this.files}
     };
   },
   // Authoritative, files-aware count for data-loss gates (pre-restore safety copy +
@@ -1662,7 +1694,7 @@ const GD={
     try{
       const r=await new Promise(res=>chrome.storage.local.get(["pv_f"],x=>res(x||{})));
       if(typeof PVDrive!=="undefined"&&PVDrive.itemCountsFromStores){
-        return PVDrive.itemCountsFromStores(P,SN,BM,NT,KL,GP,IP,PRJ,CH,WS,r.pv_f);
+        return PVDrive.itemCountsFromStores(P,SN,BM,NT,KL,GP,IP,PRJ,CH,WS,r.pv_f,LS);
       }
     }catch(e){console.warn("[PV] itemCountsFull fell back to sync:",e&&e.message)}
     return GD.itemCounts();
@@ -1685,7 +1717,7 @@ const GD={
 
   async findFile(folderId,fileName){return pvGdHttp().findFile(folderId,fileName)},
 
-  buildPayload(){return PVDrive.buildVaultBackupPayload(P,SN,BM,NT,KL,GP,IP,cfg,UC,undefined,meta,CH,WS,PRJ,undefined,PH)},
+  buildPayload(){return PVDrive.buildVaultBackupPayload(P,SN,BM,NT,KL,GP,IP,cfg,UC,undefined,meta,CH,WS,PRJ,undefined,PH,LS)},
 
   // ═══ PUSH — service worker is source of truth (runs with UI closed; uses chrome.alarms) ═══
   async push(force=false){
@@ -2054,7 +2086,7 @@ function restoreVault(d,opts){
     restoredCfg.platforms=restoredCfg.platforms.filter(p=>p&&typeof p==="object"&&typeof p.id==="string");
     for(const dp of DEFAULT_PLATFORMS){if(!restoredCfg.platforms.find(p=>p.id===dp.id))restoredCfg.platforms.push(deepClone(dp))}
   }
-  const payloadStores=["prompts","imgprompts","snippets","bookmarks","notes","skills","customgpts","photos","chats","workspaces"].filter(k=>!!d[k]);
+  const payloadStores=["prompts","imgprompts","snippets","bookmarks","notes","skills","customgpts","photos","lists","chats","workspaces"].filter(k=>!!d[k]);
   const extras=[];
   if(d.universalCapsules!==undefined)extras.push("universalCapsules");
   if(d.imgBuilderBaskets!==undefined)extras.push("imgBuilderBaskets");
@@ -2065,6 +2097,7 @@ function restoreVault(d,opts){
   if(d.prompts)P=d.prompts;
   if(d.imgprompts)IP=d.imgprompts;
   if(d.photos)PH=d.photos;
+  if(d.lists)LS=typeof PVListsModel!=="undefined"?PVListsModel.normalizeStore(deepClone(d.lists)):d.lists;
   if(d.skills)KL=d.skills;
   if(d.snippets)SN=d.snippets;
   if(d.bookmarks)BM=d.bookmarks;
@@ -2090,7 +2123,7 @@ function restoreVault(d,opts){
   // Step 4: Config (additive — never removes user platforms)
   if(restoredCfg)cfg=restoredCfg;
   // Step 5: Normalize all stores
-  [P,SN,BM,NT,KL,GP,IP].forEach(x=>{x.trash=x.trash||[];x.collections=x.collections||[]});
+  [P,SN,BM,NT,KL,GP,IP,LS].forEach(x=>{x.trash=x.trash||[];x.collections=x.collections||[]});
   migrateSectionPanels();
   if(!KL||!KL.folders)KL=mkDef("kroot","My Skills");
   if(!IP||!IP.folders)IP=mkDef("iroot","My Image Prompts");
@@ -2317,6 +2350,123 @@ function importSkillFile(){
   });
   input.click();
 }
+function pvSkillItemFromEntries(entries,fileName){
+  if(!entries?.length)return null;
+  const skillMd=entries.find(e=>e.name==="SKILL.md"||e.name.endsWith("/SKILL.md"));
+  if(!skillMd)return null;
+  const mdPath=skillMd.name.replace(/\\/g,"/");
+  const basePath=mdPath.slice(0,mdPath.length-"SKILL.md".length);
+  const ym=parseSkillYaml(skillMd.text||"");
+  const files={};
+  entries.forEach(e=>{
+    const full=e.name.replace(/\\/g,"/");
+    if(basePath&&!full.startsWith(basePath))return;
+    const rel=basePath?full.slice(basePath.length):full;
+    if(rel&&rel!=="SKILL.md"&&!rel.endsWith("/"))files[rel]=e.text||"";
+  });
+  const fallback=(basePath.split("/").filter(Boolean).pop()||fileName||"Imported skill").replace(/\.(zip|skill|md)$/i,"").replace(/[_-]/g," ");
+  return{title:ym.name||fallback,content:skillMd.text||"",description:ym.description||"",files,tags:["claude-skill-import"],_store:"skills",_sourceKind:"user-selected-skill-package"};
+}
+
+function pvPickAuthorizedSkillFiles(directory=false){
+  const input=document.createElement("input");
+  input.type="file";input.multiple=true;
+  if(directory){input.webkitdirectory=true;input.setAttribute("webkitdirectory","")}
+  else input.accept=".skill,.zip,.md,.markdown,.yaml,.yml,.json";
+  input.addEventListener("change",async()=>{
+    const selected=[...input.files];if(!selected.length)return;
+    const items=[];const rejected=[];
+    if(directory){
+      const entries=[];
+      for(const file of selected){
+        const name=(file.webkitRelativePath||file.name).replace(/\\/g,"/");
+        entries.push({name,text:await file.text()});
+      }
+      const skillMds=entries.filter(e=>e.name==="SKILL.md"||e.name.endsWith("/SKILL.md"));
+      skillMds.forEach(md=>{
+        const base=md.name.slice(0,md.name.length-"SKILL.md".length);
+        const group=entries.filter(e=>!base||e.name.startsWith(base));
+        const item=pvSkillItemFromEntries(group,base);if(item)items.push(item);
+      });
+      if(!skillMds.length)rejected.push("No SKILL.md found in the selected folder");
+    }else{
+      for(const file of selected){
+        const ext=file.name.split(".").pop().toLowerCase();
+        if(ext==="zip"||ext==="skill"){
+          try{const item=pvSkillItemFromEntries(await readZipFiles(await file.arrayBuffer()),file.name);if(item)items.push({...item,_sourceFile:file.name});else rejected.push(file.name+": no SKILL.md found")}
+          catch(e){rejected.push(file.name+": "+e.message)}
+        }else{
+          const text=await file.text(),ym=parseSkillYaml(text);
+          items.push({title:ym.name||file.name.replace(/\.(md|markdown|yaml|yml|json)$/i,"").replace(/[_-]/g," "),content:text,description:ym.description||"",files:{},tags:["claude-skill-import"],_store:"skills",_sourceFile:file.name,_sourceKind:"user-selected-file"});
+        }
+      }
+    }
+    if(!items.length){flash(rejected[0]||"No importable Skills found");return}
+    if(rejected.length)items[0]._importWarning=rejected.join("; ");
+    showImportPreview([{file:directory?"Selected Skills folder":selected.map(f=>f.name).join(", "),format:"Claude Skill package",items}],items.length,{store:"skills",folder:pvImportDefaultFolder("skills")});
+  });
+  input.click();
+}
+
+function pvPickAuthorizedCustomGptFiles(directory=false){
+  const input=document.createElement("input");
+  input.type="file";input.multiple=true;
+  if(directory){input.webkitdirectory=true;input.setAttribute("webkitdirectory","")}
+  else input.accept=".json,.md,.markdown,.csv,.tsv,.txt,.yaml,.yml,.zip";
+  input.addEventListener("change",async()=>{
+    const selected=[...input.files];if(!selected.length)return;
+    const sources=[];
+    for(const file of selected){
+      const ext=file.name.split(".").pop().toLowerCase();
+      if(ext==="zip"){
+        try{(await readZipFiles(await file.arrayBuffer())).filter(e=>/\.(json|md|markdown|csv|tsv|txt|yaml|yml)$/i.test(e.name)).forEach(e=>sources.push({name:file.name+" / "+e.name,text:e.text}))}
+        catch(e){console.warn("Prompt Vault: skipped Custom GPT ZIP",file.name,e)}
+      }else sources.push({name:file.webkitRelativePath||file.name,text:await file.text()});
+    }
+    const parsed=[];let total=0;
+    for(const src of sources){
+      const result=parseImportFile(src.text,src.name);
+      if(result.error||!result.items?.length)continue;
+      const items=result.items.map(item=>({...item,_store:"customgpts",_sourceFile:src.name,_sourceKind:"user-selected-config"}));
+      parsed.push({file:src.name,format:result.format,items});total+=items.length;
+    }
+    if(!total){flash("No importable Custom GPT configurations found");return}
+    showImportPreview(parsed,total,{store:"customgpts",folder:pvImportDefaultFolder("customgpts")});
+  });
+  input.click();
+}
+
+async function pvImportAuthorizedPaste(storeKey){
+  try{
+    const text=await navigator.clipboard.readText();if(!text?.trim()){flash("Clipboard is empty");return}
+    if(storeKey==="skills"){
+      const ym=parseSkillYaml(text),item={title:ym.name||"Pasted Claude Skill",content:text,description:ym.description||"",files:{},tags:["claude-skill-import"],_store:"skills",_sourceKind:"user-pasted"};
+      showImportPreview([{file:"Clipboard",format:"Claude Skill text",items:[item]}],1,{store:"skills",folder:pvImportDefaultFolder("skills")});return;
+    }
+    const looksJson=typeof pvLooksLikeJson==="function"?pvLooksLikeJson(text):/^[\s\uFEFF]*[\[{]/.test(text);
+    const parsed=parseImportFile(text,looksJson?"pasted-custom-gpt.json":"pasted-custom-gpt.md");
+    if(parsed.error||!parsed.items?.length){flash(parsed.error||"No Custom GPT configuration found");return}
+    const items=parsed.items.map(item=>({...item,_store:"customgpts",_sourceKind:"user-pasted"}));
+    showImportPreview([{file:"Clipboard",format:parsed.format,items}],items.length,{store:"customgpts",folder:pvImportDefaultFolder("customgpts")});
+  }catch{flash("Cannot read clipboard — paste into a local file and choose it instead")}
+}
+
+function openAuthorizedImport(storeKey){
+  const skills=storeKey==="skills",label=skills?"Claude Skills":"Custom GPT configurations";
+  showModal(`<h3>Import ${label}</h3>
+    <p style="font-size:10px;color:var(--mu);line-height:1.5">Import only content you own or are authorized to use. Prompt Vault reads files/folders you explicitly choose or text you explicitly paste.</p>
+    <div class="exp-opt" id="authFiles"><div class="eo-t">${I.dl} ${skills?"Choose .skill, ZIP, or Skill files":"Choose exported/configuration files"}</div><div class="eo-d">${skills?"Supports .skill/.zip packages plus SKILL.md, Markdown, YAML, and JSON":"Supports JSON, Markdown, CSV/TSV, YAML, and text with preview and destination mapping"}</div></div>
+    <div class="exp-opt" id="authFolder"><div class="eo-t">${S.folder} Choose a local ${skills?"Skills":"configuration"} folder</div><div class="eo-d">${skills?"Finds each explicitly selected SKILL.md and keeps its companion text files together":"Imports supported configuration files from the folder you explicitly select"}</div></div>
+    <div class="exp-opt" id="authPaste"><div class="eo-t">${S.clip} Paste user-provided ${skills?"SKILL.md":"configuration/export"}</div><div class="eo-d">Preview before importing; exact-title duplicates can be skipped, updated, or kept</div></div>
+    <div style="margin-top:8px;padding:7px;border:1px solid var(--bl);border-radius:5px;font-size:9px;color:var(--dm);line-height:1.5"><strong style="color:var(--tx)">Permission boundary</strong><br>No silent Claude/ChatGPT account access. No credential or cookie extraction. No undocumented scraping of private pages. Account or web content can be imported only when you explicitly supply/export it, or if a documented API is added later with your authorization.</div>
+    <div class="brow"><button class="bg-btn" id="authX">Cancel</button></div>`,mc=>{
+    mc.querySelector("#authX").addEventListener("click",closeModal);
+    mc.querySelector("#authFiles").addEventListener("click",()=>{closeModal();if(skills)pvPickAuthorizedSkillFiles(false);else pvPickAuthorizedCustomGptFiles(false)});
+    mc.querySelector("#authFolder").addEventListener("click",()=>{closeModal();if(skills)pvPickAuthorizedSkillFiles(true);else pvPickAuthorizedCustomGptFiles(true)});
+    mc.querySelector("#authPaste").addEventListener("click",()=>{closeModal();pvImportAuthorizedPaste(storeKey)});
+  });
+}
+
 // Render skill file tree as HTML
 function renderSkillTree(p,editable){
   const files=p.files||{};const paths=Object.keys(files).sort();
@@ -2339,7 +2489,7 @@ function renderSkillTree(p,editable){
 // ═══════ STORAGE ═══════
 async function loadData(){
   return new Promise(r=>{
-    const keys=[PK,SK,BK,NK,KK,GK,IK,PHK,PRK,CHK,WSK,MK,CK,UCK,"pv_pending_snippet","pv_pending_bookmark","pv_pending_skill","pv_pending_note","pv_pending_chat","pv_pending_prompt"];
+    const keys=[PK,SK,BK,NK,KK,GK,IK,PHK,LSK,PRK,CHK,WSK,MK,CK,UCK,"pv_pending_snippet","pv_pending_bookmark","pv_pending_skill","pv_pending_note","pv_pending_chat","pv_pending_prompt"];
     for(let i=0;i<MAX_SN;i++)keys.push(SP+"p"+i,SP+"s"+i,SP+"b"+i,SP+"n"+i,SP+"k"+i,SP+"g"+i,SP+"i"+i);
     chrome.storage.local.get(keys,res=>{
       meta=res[MK]||{sc:0,lb:0,lbs:0,si:0};
@@ -2357,6 +2507,7 @@ async function loadData(){
       GP=res[GK]?.folders?res[GK]:mkDef("groot","My Custom GPTs");
       IP=res[IK]?.folders?res[IK]:mkDef("iroot","My Image Prompts");
       PH=res[PHK]?.folders?res[PHK]:mkDef("phroot","My Photos");
+      LS=typeof PVListsModel!=="undefined"?PVListsModel.normalizeStore(deepClone(res[LSK])):(res[LSK]?.folders?res[LSK]:mkDef("lroot","My Lists & Tasks"));
       PRJ=mkDef("projroot","My Projects");
       CH=mkDef("chroot","My Chats");
       // Legacy silos: fold any Projects/Chats items into Bookmarks, then drop the keys.
@@ -2370,7 +2521,7 @@ async function loadData(){
         UC=newUC;
       }
       if(!UC.pills)UC.pills={};if(!UC.subs)UC.subs={};if(!UC.groups)UC.groups={};if(!UC.archive)UC.archive=[];
-      [P,SN,BM,NT,KL,GP,IP,PH,PRJ,CH].forEach(x=>x.trash=x.trash||[]);
+      [P,SN,BM,NT,KL,GP,IP,PH,LS,PRJ,CH].forEach(x=>x.trash=x.trash||[]);
       // ── Prompt-chain self-heal (non-destructive) ──
       // Runs on every load against whatever shape the data arrived in — a hand-edited CSV, a
       // partial restore, another device's sync. Normalizes annotations, quarantines anything
@@ -2437,8 +2588,8 @@ async function loadData(){
     });
   });
 }
-function pushUndo(){undo.push({P:deepClone(P),SN:deepClone(SN),BM:deepClone(BM),NT:deepClone(NT),KL:deepClone(KL),GP:deepClone(GP),IP:deepClone(IP),PH:deepClone(PH),PRJ:deepClone(PRJ),CH:deepClone(CH),WS:deepClone(WS)});if(undo.length>UNDO)undo.shift();$("undoBtn").style.display=undo.length?"flex":"none"}
-function doUndo(){if(!undo.length)return;const u=undo.pop();P=u.P;SN=u.SN;BM=u.BM;NT=u.NT;KL=u.KL;GP=u.GP;IP=u.IP||IP;PH=u.PH||PH;PRJ=u.PRJ||PRJ;CH=u.CH||CH;WS=u.WS||WS;save();$("undoBtn").style.display=undo.length?"flex":"none";flash("Undone");render()}
+function pushUndo(){undo.push({P:deepClone(P),SN:deepClone(SN),BM:deepClone(BM),NT:deepClone(NT),KL:deepClone(KL),GP:deepClone(GP),IP:deepClone(IP),PH:deepClone(PH),LS:deepClone(LS),PRJ:deepClone(PRJ),CH:deepClone(CH),WS:deepClone(WS)});if(undo.length>UNDO)undo.shift();$("undoBtn").style.display=undo.length?"flex":"none"}
+function doUndo(){if(!undo.length)return;const u=undo.pop();P=u.P;SN=u.SN;BM=u.BM;NT=u.NT;KL=u.KL;GP=u.GP;IP=u.IP||IP;PH=u.PH||PH;LS=u.LS||LS;PRJ=u.PRJ||PRJ;CH=u.CH||CH;WS=u.WS||WS;save();$("undoBtn").style.display=undo.length?"flex":"none";flash("Undone");render()}
 let _savePending=false,_saveTimer=null,_pvSyncQuotaWarned=false;
 function save(){
   invalidateItemCache();
@@ -2463,7 +2614,7 @@ function _doSave(){
     });
     if(!panel.clusters.length)panel.clusters=[{id:"cl_"+Date.now(),label:"",color:"",items:[]}];
   });
-  chrome.storage.local.set({[PK]:P,[SK]:SN,[BK]:BM,[NK]:NT,[KK]:KL,[GK]:GP,[IK]:IP,[PHK]:PH,[WSK]:WS,[CK]:cfg,[UCK]:UC},()=>{
+  chrome.storage.local.set({[PK]:P,[SK]:SN,[BK]:BM,[NK]:NT,[KK]:KL,[GK]:GP,[IK]:IP,[PHK]:PH,[LSK]:LS,[WSK]:WS,[CK]:cfg,[UCK]:UC},()=>{
     try{chrome.runtime.sendMessage({type:"REBUILD_MENUS"})}catch{}
   });
   meta.sc=(meta.sc||0)+1;
@@ -2496,7 +2647,7 @@ function clearBackupBanner(){$("bannerC").innerHTML=""}
 function needsBackup(){const d=meta.lb?daysSince(meta.lb):999,s=meta.sc-(meta.lbs||0);return d>=BK_DY||s>=BK_S}
 function vaultBackupExportVersion(){return typeof PVDrive!=="undefined"&&PVDrive.BACKUP_VERSION?PVDrive.BACKUP_VERSION:((typeof globalThis!=="undefined"&&globalThis.PV_VAULT_EXPORT_VERSION)||"7.3")}
 function backupPayloadBase(res){
-  const all={prompts:P,imgprompts:IP,skills:KL,snippets:SN,bookmarks:BM,notes:NT,customgpts:GP,photos:PH,projects:PRJ,chats:CH,workspaces:WS,config:cfg,universalCapsules:UC,exportedAt:new Date().toISOString(),version:vaultBackupExportVersion()};
+  const all={prompts:P,imgprompts:IP,skills:KL,snippets:SN,bookmarks:BM,notes:NT,customgpts:GP,photos:PH,lists:LS,projects:PRJ,chats:CH,workspaces:WS,config:cfg,universalCapsules:UC,exportedAt:new Date().toISOString(),version:vaultBackupExportVersion()};
   if(res.pv_baskets!==undefined)all.imgBuilderBaskets=res.pv_baskets;
   if(res.pv_f!==undefined)all.files=res.pv_f;
   return all;
@@ -2661,7 +2812,7 @@ async function pvRestoreBackupAttachments(payload){
 }
 
 function pvVaultItemCounts(vault){
-  const keys=["prompts","imgprompts","snippets","bookmarks","notes","skills","customgpts","photos","files"],out={};let total=0;
+  const keys=["prompts","imgprompts","snippets","bookmarks","notes","skills","customgpts","photos","lists","files"],out={};let total=0;
   const countTree=n=>{let c=(n?.prompts||[]).length;for(const ch of(n?.children||[]))c+=countTree(ch);return c};
   for(const k of keys){out[k]=countTree(vault?.[k]?.folders);total+=out[k]}
   out.total=total;return out;
@@ -2673,7 +2824,7 @@ function pvPortableManifest(vault,attachments){
 }
 async function pvBuildPortablePayload(){
   flushPendingSave();const extras=await chrome.storage.local.get(["pv_baskets","pv_f"]);
-  const vault={prompts:deepClone(P),imgprompts:deepClone(IP),skills:deepClone(KL),snippets:deepClone(SN),bookmarks:deepClone(BM),notes:deepClone(NT),customgpts:deepClone(GP),photos:deepClone(PH),projects:deepClone(PRJ),chats:deepClone(CH),workspaces:deepClone(WS),config:deepClone(cfg),universalCapsules:deepClone(UC),exportedAt:new Date().toISOString(),version:vaultBackupExportVersion()};
+  const vault={prompts:deepClone(P),imgprompts:deepClone(IP),skills:deepClone(KL),snippets:deepClone(SN),bookmarks:deepClone(BM),notes:deepClone(NT),customgpts:deepClone(GP),photos:deepClone(PH),lists:deepClone(LS),projects:deepClone(PRJ),chats:deepClone(CH),workspaces:deepClone(WS),config:deepClone(cfg),universalCapsules:deepClone(UC),exportedAt:new Date().toISOString(),version:vaultBackupExportVersion()};
   if(extras.pv_baskets!==undefined)vault.imgBuilderBaskets=deepClone(extras.pv_baskets);if(extras.pv_f!==undefined)vault.files=deepClone(extras.pv_f);
   const attachments=[];for(const spec of PV_PORTABLE_STORES)attachments.push({...spec,rows:await pvReadPortableStore(spec)});
   return{format:"prompt-vault-full-payload",version:1,vault,attachments,manifest:pvPortableManifest(vault,attachments)};
@@ -2687,8 +2838,8 @@ function pvValidatePortablePayload(payload){
   return"";
 }
 function pvPortableDiff(payload){
-  const current=pvVaultItemCounts({prompts:P,imgprompts:IP,snippets:SN,bookmarks:BM,notes:NT,skills:KL,customgpts:GP,photos:PH}),incoming=payload.manifest?.counts||pvVaultItemCounts(payload.vault),rows=[];
-  for(const k of["prompts","imgprompts","snippets","bookmarks","notes","skills","customgpts","photos"])rows.push({key:k,current:current[k]||0,incoming:incoming[k]||0,delta:(incoming[k]||0)-(current[k]||0)});
+  const current=pvVaultItemCounts({prompts:P,imgprompts:IP,snippets:SN,bookmarks:BM,notes:NT,skills:KL,customgpts:GP,photos:PH,lists:LS}),incoming=payload.manifest?.counts||pvVaultItemCounts(payload.vault),rows=[];
+  for(const k of["prompts","imgprompts","snippets","bookmarks","notes","skills","customgpts","photos","lists"])rows.push({key:k,current:current[k]||0,incoming:incoming[k]||0,delta:(incoming[k]||0)-(current[k]||0)});
   return{rows,currentTotal:current.total,incomingTotal:incoming.total||0,attachmentCounts:payload.manifest?.attachmentCounts||{}};
 }
 
@@ -3153,7 +3304,7 @@ function showExpMd(){
       else if(fmt==="csv"){const rows=[["Title","Platform","Tags","Content","URL","Source URL","Captured","Created","Modified","Usage"].join(",")];
         items.forEach(p=>rows.push([p.title,getPlatName(p.platform)||"",(p.tags||[]).join("; "),(p.content||"").replace(/[\r\n]+/g," "),p.url||"",p.sourceUrl||"",p.capturedAt?new Date(p.capturedAt).toISOString():"",p.created?new Date(p.created).toISOString():"",p.modified?new Date(p.modified).toISOString():"",p.usageCount||0].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")));
         data=rows.join("\n");fn=`vault-${label.toLowerCase()}-${d}.csv`;mime="text/csv"}
-      else{data=JSON.stringify(collId?{collection:col,items}:dt(),null,2);fn=`vault-${(col?col.name:label).toLowerCase().replace(/[^a-z0-9]/g,"-")}-${d}.json`;mime="application/json"}
+      else{const payload=collId?{collection:col,items}:(isB()?{_format:"prompt-vault-bookmarks",_version:1,bookmarks:deepClone(BM),exportedAt:new Date().toISOString()}:dt());data=JSON.stringify(payload,null,2);fn=isB()&&!collId?`prompt-vault-bookmarks-${d}.json`:`vault-${(col?col.name:label).toLowerCase().replace(/[^a-z0-9]/g,"-")}-${d}.json`;mime="application/json"}
       chrome.runtime.sendMessage({type:"EXPORT_FILE",data,filename:fn,mimeType:mime},()=>flash(`Exported ${fmt.toUpperCase()}`));closeModal()})})
   })}
 
@@ -3415,7 +3566,7 @@ function createBookmarkFromUrl(url){
   return bm;
 }
 function openFullView(mode){
-  const page=mode==="prompts"?"fullview-prompts.html":mode==="imgprompts"?"fullview-prompts.html?tab=imgprompts":mode==="skills"?"fullview-clips.html?tab=skills":mode==="clips"?"fullview-clips.html":mode==="notes"?"fullview-clips.html?tab=notes":mode==="bookmarks"?"fullview.html":mode==="customgpts"?"fullview.html?store=customgpts":mode==="gpt-cards"?"fullview.html?store=customgpts&focus="+encodeURIComponent(gSt.sel):mode==="bk-cards"?"fullview.html?focus="+encodeURIComponent(bSt.sel):mode==="photos"?"sidepanel.html?tab=photos":"fullview.html";
+  const page=mode==="prompts"?"fullview-prompts.html":mode==="imgprompts"?"fullview-prompts.html?tab=imgprompts":mode==="skills"?"fullview-clips.html?tab=skills":mode==="clips"?"fullview-clips.html":mode==="notes"?"fullview-clips.html?tab=notes":mode==="bookmarks"?"fullview.html":mode==="customgpts"?"fullview.html?store=customgpts":mode==="gpt-cards"?"fullview.html?store=customgpts&focus="+encodeURIComponent(gSt.sel):mode==="bk-cards"?"fullview.html?focus="+encodeURIComponent(bSt.sel):mode==="photos"?"sidepanel.html?tab=photos":mode==="lists"?"fullview-lists.html":"fullview.html";
   console.log(`[PV] openFullView: mode=${mode} → page=${page} | activeTab=${aTab}`);
   try{chrome.windows.create({url:chrome.runtime.getURL(page),type:"popup",width:1100,height:750})}
   catch(e){chrome.runtime.sendMessage({type:"OPEN_FULLVIEW",page})}
@@ -3673,6 +3824,23 @@ function openRestoreLatestFromDriveModal(opts){
   });
 }
 
+function normalizeImprovementNotes(){
+  if(Array.isArray(meta.improvementNotes))return meta.improvementNotes;
+  const legacy=typeof meta.devNotes==="string"?meta.devNotes:"";
+  meta.improvementNotes=legacy.split(/\r?\n+/).map(s=>s.replace(/^\s*(?:[-*•]|\d+[.)]|\[[ xX]\])\s*/,"").trim()).filter(Boolean).map((text,i)=>({
+    id:"imp_"+Date.now().toString(36)+"_"+i,
+    text,
+    created:Date.now(),
+    modified:Date.now()
+  }));
+  delete meta.devNotes;
+  chrome.storage.local.set({[MK]:meta});
+  return meta.improvementNotes;
+}
+function saveImprovementNotes(){chrome.storage.local.set({[MK]:meta})}
+const PV_CLAUDE_SKILLS_URL="https://claude.com/skills";
+function openOfficialClaudeSkills(){openUrl(PV_CLAUDE_SKILLS_URL)}
+
 function renderSettings(){
   const m=$("main");
   if(!cfg.disabledPlatforms)cfg.disabledPlatforms=[];
@@ -3737,10 +3905,12 @@ function renderSettings(){
     <button class="bs" id="trustReviewBtn" style="margin-top:8px">Review trust setup</button>
   </details></div>`;
 
-  // ── Improvement notes — a scratchpad for ideas about the vault itself ──
+  // ── Improvement notes — structured bullets with migration from the legacy paragraph ──
+  const improvementNotes=normalizeImprovementNotes();
   h+=`<div class="sec"><div class="sec-title">📌 Improvement notes</div>
-    <textarea id="devNotesTa" placeholder="Ideas, gripes, features you want next — kept locally with the vault." style="width:100%;min-height:76px;font-size:11px">${esc(meta?.devNotes||"")}</textarea>
-    <div style="font-size:9px;color:var(--dm);margin-top:2px">Saves as you type.</div>
+    <div id="improvementNotesList">${improvementNotes.map(n=>`<div class="setting-row" data-imp-row="${escAttr(n.id)}" style="gap:6px;margin-bottom:5px"><span style="color:var(--tab-ac);font-size:14px;line-height:1">•</span><input type="text" data-imp-text="${escAttr(n.id)}" value="${escAttr(n.text||"")}" aria-label="Improvement note" style="flex:1;min-width:0"><button class="ib dng" data-imp-del="${escAttr(n.id)}" title="Delete note">${I.trash}</button></div>`).join("")||`<div style="font-size:10px;color:var(--dm);margin-bottom:6px">No improvement notes yet.</div>`}</div>
+    <div style="display:flex;gap:4px"><input type="text" id="improvementNoteNew" placeholder="Add an improvement note…" style="flex:1;min-width:0"><button class="bs" id="improvementNoteAdd">+ Add</button></div>
+    <div style="font-size:9px;color:var(--dm);margin-top:4px">Each bullet is saved locally and can be edited or removed independently.</div>
   </div>`;
 
   // ── Appearance: Theme & Background ──
@@ -4239,8 +4409,12 @@ function renderSettings(){
   $("deviceName")?.addEventListener("blur",e=>{meta.deviceName=(e.target.value||"").trim();chrome.storage.local.set({[MK]:meta});flash("Device name saved")});
   $("faviconsDisabledTog")?.addEventListener("change",e=>{cfg.faviconsDisabled=e.target.checked;save();renderSettings();flash(e.target.checked?"Site icons hidden":"Site icons shown")});
   $("pvBridgeTog")?.addEventListener("change",e=>{cfg.pvBridgeEnabled=e.target.checked;save();renderSettings();flash(e.target.checked?"PV bridge enabled":"PV bridge disabled")});
-  const _devNotesSave=debounce(()=>{chrome.storage.local.set({[MK]:meta})},400);
-  $("devNotesTa")?.addEventListener("input",e=>{meta.devNotes=e.target.value;_devNotesSave()});
+  const _improvementNotesSave=debounce(saveImprovementNotes,400);
+  document.querySelectorAll("[data-imp-text]").forEach(el=>el.addEventListener("input",e=>{const n=meta.improvementNotes.find(x=>x.id===e.target.dataset.impText);if(n){n.text=e.target.value;n.modified=Date.now();_improvementNotesSave()}}));
+  document.querySelectorAll("[data-imp-del]").forEach(el=>el.addEventListener("click",()=>{meta.improvementNotes=meta.improvementNotes.filter(x=>x.id!==el.dataset.impDel);saveImprovementNotes();renderSettings()}));
+  const addImprovementNote=()=>{const inp=$("improvementNoteNew"),text=(inp?.value||"").trim();if(!text)return;meta.improvementNotes.push({id:"imp_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2,7),text,created:Date.now(),modified:Date.now()});saveImprovementNotes();renderSettings()};
+  $("improvementNoteAdd")?.addEventListener("click",addImprovementNote);
+  $("improvementNoteNew")?.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();addImprovementNote()}});
   $("trustReviewBtn")?.addEventListener("click",()=>openTrustOnboarding(true));
 
   $("themeSel")?.addEventListener("change",e=>{cfg.theme=e.target.value;save();applyThemeAndBackground();flash("Theme: "+e.target.value)});
@@ -4527,10 +4701,19 @@ function rtN(n,dp,selId,expM,mode){
   let h=`<div class="tr ${sc}" data-id="${n.id}" style="padding-left:${5+dp*12}px"><span style="width:9px;display:flex;opacity:${hk?1:.2}">${V.ch(io)}</span><span style="display:flex;${ac2}">${V.f(io,col||undefined)}</span><span class="nm">${esc(n.name)}</span>${pc?`<span class="ct">${pc}</span>`:''}</div>`;
   if(io&&hk)for(const c of n.children)h+=rtN(c,dp+1,selId,expM,mode);return h}
 
+function renderListsHub(){
+  purge();const m=$("main");if(!m)return;
+  const stats=typeof PVListsModel!=="undefined"?PVListsModel.folderStats(LS?.folders):{folders:0,files:countItems(LS?.folders||{}).prompts||0};
+  const types={bulleted:0,numbered:0,checklist:0,kanban:0,sticky:0};
+  (function walk(n){for(const file of n?.prompts||[])if(types[file.type]!==undefined)types[file.type]++;for(const child of n?.children||[])walk(child)})(LS?.folders);
+  m.innerHTML=`<div style="padding:14px;overflow:auto;flex:1"><div style="border:1px solid var(--bl);border-left:3px solid var(--ls);border-radius:8px;background:var(--sf);padding:14px"><div style="font-size:15px;font-weight:700;color:var(--ls);margin-bottom:4px">Lists &amp; Tasks</div><div style="font-size:10px;color:var(--mu);line-height:1.5;margin-bottom:12px">An independent folder tree for numbered and bulleted lists, checklists, split-column Kanban boards, and sticky notes.</div><button class="ba" id="openLists" style="background:var(--lsd);border-color:var(--ls);color:var(--ls)">${S.expand} Open Lists &amp; Tasks</button><div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:12px"><div class="ins-section"><strong>${stats.files}</strong><div style="font-size:9px;color:var(--dm)">files</div></div><div class="ins-section"><strong>${stats.folders}</strong><div style="font-size:9px;color:var(--dm)">folders</div></div>${Object.entries(types).map(([k,v])=>`<div class="ins-section"><strong>${v}</strong><div style="font-size:9px;color:var(--dm);text-transform:capitalize">${esc(k)}</div></div>`).join("")}</div><div style="font-size:9px;color:var(--dm);margin-top:10px">Kanban follows Compass: horizontally split columns, independent column scrolling, and cards that move within or across columns.</div></div></div>`;
+  $("openLists")?.addEventListener("click",()=>openFullView("lists"));updTabs();rFtr();
+}
+
 function render(){
   try{
   // Set tab-aware accent color on root for all UI elements
-  const _tabAcMap={prompts:'var(--ac)',imgprompts:'var(--ip)',snippets:'var(--sn)',bookmarks:'var(--bk)',notes:'var(--nt)',skills:'var(--sk)',customgpts:'var(--gp)',photos:'var(--ph)',claudecmds:'var(--cc)',workspace:'var(--ws)',templates:'var(--ac)',settings:'var(--ac)'};
+  const _tabAcMap={prompts:'var(--ac)',imgprompts:'var(--ip)',snippets:'var(--sn)',bookmarks:'var(--bk)',notes:'var(--nt)',skills:'var(--sk)',customgpts:'var(--gp)',photos:'var(--ph)',claudecmds:'var(--cc)',lists:'var(--ls)',workspace:'var(--ws)',templates:'var(--ac)',settings:'var(--ac)'};
   document.documentElement.style.setProperty('--tab-ac',_tabAcMap[aTab]||'var(--ac)');
   $("qlDrop")?.classList.remove("open");
   if(aTab==="settings"){renderSettings();updTabs();rFtr();return}
@@ -4538,6 +4721,7 @@ function render(){
   if(aTab==="templates"){renderTemplateGallery();updTabs();rFtr();return}
   if(aTab==="workspace"){renderWorkspaceHub();return}
   if(aTab==="claudecmds"){renderClaudeCommands();return}
+  if(aTab==="lists"){renderListsHub();return}
   purge();const m=$("main"),s2=st(),d2=dt();
   let snapNode=null;const snap=document.querySelector(".snap");if(snap){snapNode=snap;snapNode.remove()}
   // Lean chrome: the editor takes the whole panel; an empty silo shows only its welcome card.
@@ -4545,6 +4729,7 @@ function render(){
   // Section toolbar (search + filters + collections) is collapsible as a block.
   const _chromeHidden=!!cfg?.secChromeCollapsed;
   let h='';
+  if(isK())h+=claudeToolsHeader("skills");
   if(!_lean)h+=`<div class="tree-hdr sec-chrome-hdr" id="secChromeTog" role="button" tabindex="0" aria-expanded="${_chromeHidden?'false':'true'}" title="${_chromeHidden?'Show':'Hide'} search & filters"><span class="tree-lbl">Search &amp; Filters</span><span style="color:var(--dm)">${V.ch(!_chromeHidden)}</span></div>`;
   if(typeof wsBarHtml==="function")h+=wsBarHtml();
   if(!_lean&&!_chromeHidden)h+=`<div class="srch-box"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--dm)" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" id="qIn" placeholder="Search..." value="${esc(s2.q)}"><button class="ib" id="qX" style="display:${s2.q?'flex':'none'}"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>`;
@@ -4671,6 +4856,7 @@ function render(){
   h+=`<div id="chmBar"></div><div class="scroll" id="cArea"></div>`;
   m.innerHTML=h;
   if(snapNode)m.appendChild(snapNode);
+  wireClaudeToolsHeader(m);
   wireAll();rTActs();rContent();rFtr();updTabs();
   }catch(e){console.error("[PV] Render error:",e);showErrorPanel(e)}
 }
@@ -4681,6 +4867,11 @@ function wireAll(){
     r.addEventListener("click",()=>{s2.sel=id;s2.view="list";s2.q="";s2.collFilter="";const n=findFolder(d2.folders,id);if(n&&(n.children||[]).length)s2.exp[id]=!s2.exp[id];render()});
     r.addEventListener("contextmenu",e=>{const f=findFolder(d2.folders,id);if(!f)return;
       const items=[{a:"add",l:"New Subfolder",ic:I.plus,fn:()=>{s2.sel=id;s2.exp[id]=1;addFolder()}},{a:"rn",l:"Rename",ic:I.edit,fn:()=>rnMd(id,f.name)},{a:"co",l:"Color",ic:I.pal,fn:()=>{s2.colOn=1;s2.sel=id;render()}},{a:"ws",l:"Workspace…",ic:S.grid,fn:()=>wsAssignFolderMd(id)}];
+      if(isPh())items.push({sep:1},{a:"slide",l:"Start folder slideshow",ic:S.frame,fn:()=>pvStartFolderSlideshow(id)},{a:"report",l:"Print / export photo report…",ic:I.dl,fn:()=>pvOpenPhotoReportForFolder(id)});
+      if(PV_QUICK_FOLDER_SILOS[aTab]){
+        const marked=pvQuickFolderIsMarked(aTab,id);
+        items.push({a:"quick",l:marked?"Remove from Quick Access":"Mark for Quick Access",ic:marked?S.star:S.starEmpty,fn:()=>{const on=pvQuickFolderToggle(aTab,id);flash(on?"Folder added to Quick Access":"Folder removed from Quick Access");render()}});
+      }
       if(id!==rId())items.push({sep:1},{a:"dl",l:"Delete",ic:I.trash,cls:"dng",fn:()=>delMd("folder",id,f.name)});showContextMenu(e,items)});
     r.draggable=true;
     r.addEventListener("dragstart",e=>{e.dataTransfer.setData("fid",id)});
@@ -5078,6 +5269,7 @@ function updTabs(){
   _tc("tabI","tab "+(aTab==="imgprompts"?"t-i":""));
   _tc("tabPH","tab "+(aTab==="photos"?"t-ph":""));
   _tc("tabCC","tab "+(aTab==="claudecmds"?"t-cc":""));
+  _tc("tabLS","tab "+(aTab==="lists"?"t-ls":""));
   _tc("tabW","tab "+(aTab==="workspace"?"t-w":""));
   ["primaryFind","primarySave","primaryOrganize","primaryRecover"].forEach(id=>$(id)?.classList.remove("active"));
   if(aTab==="workspace")$("primaryOrganize")?.classList.add("active");else if(aTab==="recovery")$("primaryRecover")?.classList.add("active");
@@ -5091,10 +5283,11 @@ function updTabs(){
   _tt("tIC",countItems(IP.folders).prompts||"");
   _tt("tPHC",countItems(PH.folders).prompts||"");
   _tt("tCC",(typeof pvCcFlat==="function"?pvCcFlat().length:0)||"");
+  _tt("tLSC",LS?.folders?countItems(LS.folders).prompts||"":"");
 }
 
-function rFtr(){const p=countItems(P.folders),s=countItems(SN.folders),b=countItems(BM.folders),n=countItems(NT.folders),k=countItems(KL.folders),g=countItems(GP.folders),ip=countItems(IP.folders),phc=countItems(PH.folders);
-  const ftrS=$("ftrS");if(ftrS)ftrS.innerHTML=`${p.prompts}p ${S.bullet} ${ip.prompts}img ${S.bullet} ${s.prompts}s ${S.bullet} ${b.prompts}b ${S.bullet} ${n.prompts}n ${S.bullet} ${k.prompts}sk ${S.bullet} ${g.prompts}g ${S.bullet} ${phc.prompts}ph <span class="ftr-links"><span class="ftr-link${aTab==='templates'?' ftr-link-on':''}" id="ftrTpl">&#128218; Templates</span></span>`;
+function rFtr(){const p=countItems(P.folders),s=countItems(SN.folders),b=countItems(BM.folders),n=countItems(NT.folders),k=countItems(KL.folders),g=countItems(GP.folders),ip=countItems(IP.folders),phc=countItems(PH.folders),lsc=LS?.folders?countItems(LS.folders):{prompts:0};
+  const ftrS=$("ftrS");if(ftrS)ftrS.innerHTML=`${p.prompts}p ${S.bullet} ${ip.prompts}img ${S.bullet} ${s.prompts}s ${S.bullet} ${b.prompts}b ${S.bullet} ${n.prompts}n ${S.bullet} ${k.prompts}sk ${S.bullet} ${g.prompts}g ${S.bullet} ${phc.prompts}ph ${S.bullet} ${lsc.prompts}ls <span class="ftr-links"><span class="ftr-link${aTab==='templates'?' ftr-link-on':''}" id="ftrTpl">&#128218; Templates</span></span>`;
   $("ftrTpl")?.addEventListener("click",()=>{meta._tplSilo=siloHasTemplates(aTab)?aTab:"prompts";meta._tplCat="";aTab="templates";render()});
   const days=meta.lb?Math.floor(daysSince(meta.lb)):null;
   const ftrB=$("ftrB");
@@ -5143,6 +5336,7 @@ function rEditor(c){
     const summary=skillFileSummary({content:s2.eCo,files:s2._skFiles});
     c.innerHTML=`<div class="ed sk-ed" style="--ed-ac:var(--sk)"><div class="ed-bk"><button id="edBk">${I.back}</button><span>${s2.eId==="new"?"New Skill":"Edit Skill"}</span></div>
     <input class="ti" id="edTi" value="${esc(s2.eTi)}" placeholder="Skill name (e.g. story-guru)...">
+    <input class="tg sk-summary-input" id="skSummary" value="${escAttr(s2._skSummary||"")}" placeholder="Summary — what this Skill does and when Claude should use it">
     <input class="tg" id="edTg" value="${esc(s2.eTg)}" placeholder="Tags...">
     <div class="sk-tree-panel">
       <div class="sk-tree-hdr"><span class="sk-tree-title">Package · ${summary.fileCount} file${summary.fileCount===1?'':'s'} · ${summary.totalKB}KB</span></div>
@@ -5187,13 +5381,14 @@ function rEditor(c){
     $("skDlMd")?.addEventListener("click",()=>{downloadSkillMd({title:s2.eTi,content:s2.eCo})});
     $("skDlZip")?.addEventListener("click",()=>{downloadSkillZip({title:s2.eTi,content:s2.eCo,files:s2._skFiles})});
     // Wire textarea changes
-    const ta=$("edTa"),ti=$("edTi"),tg=$("edTg");
+    const ta=$("edTa"),ti=$("edTi"),tg=$("edTg"),skSummary=$("skSummary");
     ta?.addEventListener("input",()=>{
       if(s2._skView==="SKILL.md")s2.eCo=ta.value;
       else s2._skFiles[s2._skView]=ta.value;
       $("edSt").textContent=`${ta.value.length}c · ${wordCount(ta.value)}w`});
     ti?.addEventListener("input",()=>{s2.eTi=ti.value});
     tg?.addEventListener("input",()=>{s2.eTg=tg.value});
+    skSummary?.addEventListener("input",()=>{s2._skSummary=skSummary.value});
     $("edBk")?.addEventListener("click",()=>{s2.view="list";s2.eId=null;s2._skFiles=null;s2._skView=null;render()});
     $("edX")?.addEventListener("click",()=>{s2.view="list";s2.eId=null;s2._skFiles=null;s2._skView=null;render()});
     $("edOK")?.addEventListener("click",()=>saveItem());
@@ -5396,12 +5591,13 @@ function rCollView(c){
   const acCol='var(--tab-ac)';
   const colStyle=bg?`color:${bg.fg}`:`color:${acCol}`;
   const dotStyle=bg?`background:${bg.v}`:`background:${acCol}`;
-  c.innerHTML=`<div class="pad"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px"><div style="display:flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:50%;${dotStyle};flex-shrink:0"></span><span style="font-size:12px;font-weight:600;${colStyle}">${esc(col.name)}</span><span style="font-size:9px;color:var(--dm)">${items.length}</span></div><button class="bs" id="collExportHtml" title="Export collection as HTML">${I.dl} Export as HTML</button></div><div id="clL"></div></div>`;
+  c.innerHTML=`<div class="pad"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px"><div style="display:flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:50%;${dotStyle};flex-shrink:0"></span><span style="font-size:12px;font-weight:600;${colStyle}">${esc(col.name)}</span><span style="font-size:9px;color:var(--dm)">${items.length}</span></div><button class="bs" id="collExportHtml" title="${isPh()?"Print or export this photo collection":"Export collection as HTML"}">${I.dl} ${isPh()?"Photo report":"Export as HTML"}</button></div><div id="clL"></div></div>`;
   const l=$("clL");
-  const itemLabel=isP()?"prompts":isI()?"image prompts":isK()?"skills":isS()?"clips":isN()?"notes":isG()?"custom GPTs":"bookmarks";
-  const itemSingular=isP()?"prompt":isI()?"image prompt":isK()?"skill":isS()?"clip":isN()?"note":isG()?"GPT":"bookmark";
-  if(!items.length){l.innerHTML=`<div class="empty-guide"><div class="empty-icon" style="font-size:20px">${S.pin}</div>No ${itemLabel} yet<div class="empty-hint">Use the ${S.pin} button on any ${itemSingular} to add it here</div></div>`;$("collExportHtml")?.addEventListener("click",()=>exportCollectionAsHtml(col));return}
-  items.sort((a,b)=>(b.modified||0)-(a.modified||0));
+  const itemLabel=isP()?"prompts":isI()?"image prompts":isK()?"skills":isS()?"clips":isN()?"notes":isG()?"custom GPTs":isPh()?"photos":"bookmarks";
+  const itemSingular=isP()?"prompt":isI()?"image prompt":isK()?"skill":isS()?"clip":isN()?"note":isG()?"GPT":isPh()?"photo":"bookmark";
+  const exportCollection=()=>isPh()?pvOpenPhotoReport({name:col.name,items:getCollItems(col.id),kind:"collection"}):exportCollectionAsHtml(col);
+  if(!items.length){l.innerHTML=`<div class="empty-guide"><div class="empty-icon" style="font-size:20px">${S.pin}</div>No ${itemLabel} yet<div class="empty-hint">Use the ${S.pin} button on any ${itemSingular} to add it here</div></div>`;$("collExportHtml")?.addEventListener("click",exportCollection);return}
+  if(!isPh())items.sort((a,b)=>(b.modified||0)-(a.modified||0));
   const PAGE=40;const visible=items.slice(0,PAGE);
   l.classList.toggle("launch-grid",isG()&&st().listMode==="launcher");
   l.classList.toggle("photo-grid",isPh()&&st().listMode==="gallery");
@@ -5410,7 +5606,7 @@ function rCollView(c){
   else if(isL()&&st().listMode==="compact")visible.forEach(p=>l.appendChild(mkCompactCard(p,p.folderId)));
   else visible.forEach(p=>l.appendChild(mkCard(p,p.folderId,{showF:1,collId:col.id})));
   if(items.length>PAGE){const more=document.createElement("button");more.className="bs show-more-btn";more.textContent=`Show ${items.length-PAGE} more`;more.addEventListener("click",()=>{more.remove();const rest=items.slice(PAGE);if(isL()&&st().listMode==="compact")rest.forEach(p=>l.appendChild(mkCompactCard(p,p.folderId)));else rest.forEach(p=>l.appendChild(mkCard(p,p.folderId,{showF:1,collId:col.id})))});l.appendChild(more)}
-  $("collExportHtml")?.addEventListener("click",()=>exportCollectionAsHtml(col));
+  $("collExportHtml")?.addEventListener("click",exportCollection);
 }
 
 function rFolder(c){
@@ -5426,12 +5622,12 @@ function rFolder(c){
   h+='<div class="bc">';crumbs.forEach((b,i)=>{if(i)h+='<span class="sep">/</span>';h+=`<span class="c ${i===crumbs.length-1?'cur':''}" data-nav="${b.id}">${esc(b.name)}</span>`});h+='</div>';
   if(f.children?.length){h+='<div class="sf-chips">';f.children.forEach(ch=>{const col=ch.color||"";h+=`<div class="sf-chip" data-nav="${ch.id}"><span style="display:flex;${col?'color:'+col:'color:var(--'+acV()+')'}">${V.f(0,col||undefined)}</span><span>${esc(ch.name)}</span><span style="font-size:8px;color:var(--dm)">${countItems(ch).prompts}</span></div>`});h+='</div>'}
   const label=isP()?"Prompt":isI()?"Image Prompt":isK()?"Skill":isS()?"Clip":isN()?"Note":isG()?"Custom GPT":isPh()?"Photo":isPR()?"Project":"Bookmark";
-  h+=`<div style="display:flex;gap:3px;margin-bottom:5px"><button class="ba ba-${ac}" id="newI">${I.plus} New ${label}</button>${isK()?`<button class="ba ba-k" id="impSkill" style="border-style:dashed">${S.inbox} Import</button>`:''}${isS()?`<button class="ba ba-s" id="clipPaste" style="border-style:dashed">${S.clip} Paste</button><button class="ba ba-s" id="upClip" style="border-style:dashed" title="Upload .md/.txt files as clips">${S.inbox} Upload</button>`:''}${isN()?`<button class="ba ba-n" id="upNote" style="border-style:dashed" title="Upload .md/.txt files as notes">${S.inbox} Upload</button>`:''}${isP()?`<button class="ba ba-p" id="promptPaste" style="border-style:dashed">${S.clip} Paste</button>`:''}${isPh()?`<button class="ba ba-${ac}" id="phPaste" style="border-style:dashed" title="Paste an image from the clipboard (or press Ctrl+V)">${S.clip} Paste image</button>`:''}${(isN()||isS())?`<button class="ba ba-${ac}" id="reportBtn" style="border-style:dashed" title="Combine notes & clips into one report">${S.doc} Report</button>`:''}<div class="sort-w"><button class="bs" id="soB">${I.sort}</button><div class="sort-m" id="soM" style="display:${s2.sortOn?'block':'none'}">${[["modified","Modified"],["name","Name"],["created","Created"],["usage","Used"],["custom","Custom"]].map(([k,l])=>`<div class="sort-o ${s2.sort===k?'a':''}" data-s="${k}">${l}</div>`).join("")}</div></div>${isL()?`<button class="bs" id="listModeBtn" title="${s2.listMode==='compact'?'Card view':'Compact view'}">${s2.listMode==='compact'?S.hamburger:S.grid}</button>`:''}${(isP()||isS()||isL()||isPh())?`<button class="bs ${st().bulkMode?'active-bulk':''}" id="bulkBtn" title="Select multiple">${S.checkbox}${isPh()?(st().bulkMode?' Done':' Select'):''}</button>`:''}${isL()?`<button class="bs" id="contentExpandBtn" title="Expand view"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg></button>`:''}</div>`;
+  h+=`<div style="display:flex;gap:3px;margin-bottom:5px;flex-wrap:wrap"><button class="ba ba-${ac}" id="newI">${I.plus} New ${label}</button><button class="bs" id="newF" title="Create a folder in the current location">${S.folder} New Folder</button>${(isP()||isS()||isB())?`<button class="bs" id="sectionImport" title="Import files directly into ${label}s">${S.inbox} Import</button>`:''}${isB()?`<button class="bs" id="bookmarkRestore" title="Preview and restore a bookmarks JSON backup">${I.rest} Restore Backup</button>`:''}${(isK()||isG())?`<button class="ba ba-${ac}" id="authorizedImport" style="border-style:dashed" title="Import only files, folders, or text you explicitly provide">${S.inbox} Authorized Import</button>`:''}${isK()?`<button class="bs" id="claudeSkillsPage" title="Open the official Claude Skills page">${I.open} Official Claude Skills</button>`:''}${isS()?`<button class="ba ba-s" id="clipPaste" style="border-style:dashed">${S.clip} Paste</button><button class="ba ba-s" id="upClip" style="border-style:dashed" title="Upload .md/.txt files as clips">${S.inbox} Upload</button>`:''}${isN()?`<button class="ba ba-n" id="upNote" style="border-style:dashed" title="Upload .md/.txt files as notes">${S.inbox} Upload</button>`:''}${isP()?`<button class="ba ba-p" id="promptPaste" style="border-style:dashed">${S.clip} Paste</button>`:''}${isPh()?`<button class="ba ba-${ac}" id="phPaste" style="border-style:dashed" title="Paste an image from the clipboard (or press Ctrl+V)">${S.clip} Paste image</button>`:''}${(isN()||isS())?`<button class="ba ba-${ac}" id="reportBtn" style="border-style:dashed" title="Combine notes & clips into one report">${S.doc} Report</button>`:''}<div class="sort-w"><button class="bs" id="soB">${I.sort}</button><div class="sort-m" id="soM" style="display:${s2.sortOn?'block':'none'}">${[["modified","Modified"],["name","Name"],["created","Created"],["usage","Used"],["custom","Custom"]].map(([k,l])=>`<div class="sort-o ${s2.sort===k?'a':''}" data-s="${k}">${l}</div>`).join("")}</div></div>${isL()?`<button class="bs" id="listModeBtn" title="${s2.listMode==='compact'?'Card view':'Compact view'}">${s2.listMode==='compact'?S.hamburger:S.grid}</button>`:''}${(isP()||isS()||isL()||isPh())?`<button class="bs ${st().bulkMode?'active-bulk':''}" id="bulkBtn" title="Select multiple">${S.checkbox}${isPh()?(st().bulkMode?' Done':' Select'):''}</button>`:''}${isL()?`<button class="bs" id="contentExpandBtn" title="Expand view"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg></button>`:''}</div>`;
   if((isP()||isS()||isL())&&st().bulkMode&&st().bulkSel.length){
     h+=`<div class="bulk-bar"><span>${st().bulkSel.length} selected</span>${(isP()||isS())?`<button class="bs" id="bulkTag">+ Tags</button>`:''}<button class="bs" id="bulkMv">${I.move} Move</button><button class="bs dng" id="bulkDl">${I.trash} Delete</button><button class="bs" id="bulkX">Clear</button></div>`;
   }
   if(isPh()&&st().bulkMode&&st().bulkSel.length){
-    h+=`<div class="bulk-bar"><span>${st().bulkSel.length} selected</span><button class="bs" id="phZip">${I.dl} ZIP</button><button class="bs" id="phEach">${I.dl} Each</button><button class="bs" id="bulkMv">${I.move} Move</button><button class="bs dng" id="bulkDl">${I.trash} Delete</button><button class="bs" id="bulkX">Clear</button></div>`;
+    h+=`<div class="bulk-bar"><span>${st().bulkSel.length} selected · drag any selected photo or use Move mob</span><button class="bs" id="phZip">${I.dl} ZIP</button><button class="bs" id="phEach">${I.dl} Each</button><button class="bs" id="bulkMv">${I.move} Move mob</button><button class="bs dng" id="bulkDl">${I.trash} Delete</button><button class="bs" id="bulkX">Clear</button></div>`;
   }
   if(isP()&&s2.sel===rId()&&!s2.q&&!s2.tagFilter&&!s2.bulkMode){
     const top=allItems(P.folders).filter(x=>(x.usageCount||0)>1).sort((a,b)=>(b.usageCount||0)-(a.usageCount||0)).slice(0,4);
@@ -5441,7 +5637,7 @@ function rFolder(c){
   if(!f.prompts?.length&&!f.children?.length){
     const totalAll=countItems(P.folders).prompts+countItems(SN.folders).prompts+countItems(BM.folders).prompts+countItems(NT.folders).prompts+countItems(KL.folders).prompts+countItems(GP.folders).prompts+countItems(IP.folders).prompts;
     if(s2.sel===rId()&&totalAll===0){
-      h+=`<div class="empty-guide"><div class="empty-icon" style="font-size:24px;margin-bottom:8px">&#9889;</div><div style="font-size:12px;font-weight:600;color:var(--tx);margin-bottom:4px">Welcome to Prompt Vault</div>Your vault is empty. Get started by creating your first ${esc(label.toLowerCase())}${siloHasTemplates(aTab)?", or browse the template library":""}.<div class="empty-action"><button class="bp" id="emptyNew">${I.plus} New ${label}</button>${siloHasTemplates(aTab)?`<button class="bs" id="emptyTpl">&#128218; Browse Templates</button>`:""}</div><div class="empty-hint" style="text-align:left;max-width:280px;margin:10px auto 0;line-height:1.7">${S.bolt} Press <kbd style="background:var(--hv);padding:1px 4px;border-radius:3px;font-size:8px">Alt+Shift+V</kbd> on any AI chat page for the quick palette<br>${S.clip} Highlight text on any page &rarr; right-click &rarr; <strong>Save clip</strong><br>${S.pin} Right-click any page &rarr; <strong>Bookmark in Prompt Vault</strong><br><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> <kbd style="background:var(--hv);padding:1px 4px;border-radius:3px;font-size:8px">Ctrl+K</kbd> searches everything</div></div>`;
+      h+=`<div class="empty-guide"><div class="empty-icon" style="font-size:24px;margin-bottom:8px">&#9889;</div><div style="font-size:12px;font-weight:600;color:var(--tx);margin-bottom:4px">Welcome to Prompt Vault</div>Your vault is empty. Start with an item or organize first with an empty folder.<div class="empty-action"><button class="bp" id="emptyNew">${I.plus} New ${label}</button><button class="bs" id="emptyFolder">${S.folder} New Folder</button>${siloHasTemplates(aTab)?`<button class="bs" id="emptyTpl">&#128218; Browse Templates</button>`:""}</div><div class="empty-hint" style="text-align:left;max-width:280px;margin:10px auto 0;line-height:1.7">${S.bolt} Press <kbd style="background:var(--hv);padding:1px 4px;border-radius:3px;font-size:8px">Alt+Shift+V</kbd> on any AI chat page for the quick palette<br>${S.clip} Highlight text on any page &rarr; right-click &rarr; <strong>Save clip</strong><br>${S.pin} Right-click any page &rarr; <strong>Bookmark in Prompt Vault</strong><br><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> <kbd style="background:var(--hv);padding:1px 4px;border-radius:3px;font-size:8px">Ctrl+K</kbd> searches everything</div></div>`;
     }else{
       const tabHint=isS()?`<div class="empty-hint" style="margin-top:6px">Tip: AI responses have a &#128190; save button — look for the gold icon on any AI chat page</div>`:"";
       h+=`<div class="empty-guide"><div class="empty-icon" style="font-size:16px">&#128193;</div>No items yet<div class="empty-hint">Click <strong>+ New ${label}</strong> to create one</div>${tabHint}</div>`;
@@ -5457,13 +5653,18 @@ function rFolder(c){
     el.addEventListener("click",()=>{s2.sel=el.dataset.nav;s2.exp[s2.sel]=1;s2.view="list";render()});
     if(el.classList.contains("sf-chip")){el.addEventListener("dragover",e=>{e.preventDefault();el.classList.add("drop")});el.addEventListener("dragleave",()=>el.classList.remove("drop"));el.addEventListener("drop",e=>{e.preventDefault();el.classList.remove("drop");handleDrop(e,el.dataset.nav);render()})}});
   $("newI")?.addEventListener("click",addItem);
+  $("newF")?.addEventListener("click",addFolder);
+  $("sectionImport")?.addEventListener("click",()=>{const store=isS()?"snippets":isB()?"bookmarks":"prompts";importPickFiles({store,folder:pvImportDefaultFolder(store)})});
+  $("bookmarkRestore")?.addEventListener("click",openBookmarksBackupImport);
   c.querySelectorAll("[data-qb]").forEach(el=>el.addEventListener("click",()=>{
     const t=allItems(P.folders).find(x=>x.id===el.dataset.qb);
     if(t)handleUse(t.folderId,t,"inject");
   }));
   $("emptyNew")?.addEventListener("click",addItem);
+  $("emptyFolder")?.addEventListener("click",addFolder);
   $("emptyTpl")?.addEventListener("click",()=>{meta._tplSilo=aTab;meta._tplCat="";aTab="templates";render()});
-  $("impSkill")?.addEventListener("click",importSkillFile);
+  $("authorizedImport")?.addEventListener("click",()=>openAuthorizedImport(isK()?"skills":"customgpts"));
+  $("claudeSkillsPage")?.addEventListener("click",openOfficialClaudeSkills);
   $("clipPaste")?.addEventListener("click",clipFromClipboard);
   // Upload text files straight into the current Notes/Clips folder — one item per file.
   const _uploadTextFiles=silo=>{
@@ -5540,7 +5741,8 @@ function rFolder(c){
     const flds=allFolders(dt().folders);const n=st().bulkSel.length;
     showModal(`<h3>Move ${n} items to</h3><div class="fp">${flds.map(f=>`<div class="fpi" data-id="${f.id}" style="padding-left:${6+f.depth*10}px">${V.f(0,f.color||undefined)} ${esc(f.name)}</div>`).join("")}</div>`,mc=>{
       mc.querySelectorAll(".fpi").forEach(el=>{el.addEventListener("click",()=>{pushUndo();const d2=dt(),tgt=findFolder(d2.folders,el.dataset.id);if(!tgt)return;
-        for(const pid of st().bulkSel){for(const fi of allFolders(d2.folders)){const fold=findFolder(d2.folders,fi.id);if(fold&&fold.id!==el.dataset.id){const idx=fold.prompts.findIndex(x=>x.id===pid);if(idx>=0){const[p]=fold.prompts.splice(idx,1);tgt.prompts=tgt.prompts||[];tgt.prompts.push(p);break}}}}
+        if(isPh())pvMovePhotoMob(st().bulkSel,el.dataset.id);
+        else for(const pid of st().bulkSel){for(const fi of allFolders(d2.folders)){const fold=findFolder(d2.folders,fi.id);if(fold&&fold.id!==el.dataset.id){const idx=fold.prompts.findIndex(x=>x.id===pid);if(idx>=0){const[p]=fold.prompts.splice(idx,1);tgt.prompts=tgt.prompts||[];tgt.prompts.push(p);break}}}}
         save();st().bulkSel=[];st().bulkMode=false;closeModal();flash("Moved");render()})})})});
   c.querySelectorAll(".sort-o").forEach(el=>{el.addEventListener("click",()=>{s2.sort=el.dataset.s;s2.sortOn=0;render()})});
   const l=$("iList");if(f.prompts?.length){const sorted=getSorted(f);
@@ -5553,7 +5755,7 @@ function rFolder(c){
     else visible.forEach(p=>l.appendChild(mkCard(p,s2.sel)));
     if(sorted.length>PAGE){const more=document.createElement("button");more.className="bs show-more-btn";more.textContent=`Show ${sorted.length-PAGE} more`;more.addEventListener("click",()=>{more.remove();const rest=sorted.slice(PAGE);if(isPh()&&st().listMode==="gallery")rest.forEach(p=>l.appendChild(mkPhotoTile(p,s2.sel)));else if(isG()&&st().listMode==="launcher")rest.forEach(p=>l.appendChild(mkLaunchTile(p,s2.sel)));else if(isL()&&s2.listMode==="compact")rest.forEach(p=>l.appendChild(mkCompactCard(p,s2.sel)));else rest.forEach(p=>l.appendChild(mkCard(p,s2.sel)))});l.appendChild(more)}}}
 function getSorted(f){const s2=st(),p=[...(f.prompts||[])];
-  if(s2.sort==="custom")return[...p.filter(x=>x.favorited),...p.filter(x=>!x.favorited)];
+  if(s2.sort==="custom")return isPh()?p:[...p.filter(x=>x.favorited),...p.filter(x=>!x.favorited)];
   switch(s2.sort){case"name":p.sort((a,b)=>a.title.localeCompare(b.title));break;case"created":p.sort((a,b)=>(b.created||0)-(a.created||0));break;case"usage":p.sort((a,b)=>(b.usageCount||0)-(a.usageCount||0));break;default:p.sort((a,b)=>(b.modified||0)-(a.modified||0))}
   if(isP()&&_uiBoostPlat){
     const bump=arr=>arr.slice().sort((a,b)=>(b.platform===_uiBoostPlat?1:0)-(a.platform===_uiBoostPlat?1:0));
@@ -5911,22 +6113,61 @@ async function pvCopyPhotoToClipboard(p){
     flash("OK Image copied to clipboard");
   }catch(e){flash("Copy failed: "+(e.message||"clipboard blocked"))}
 }
+function pvPhotoActualItems(node,out=[]){for(const p of(node.prompts||[]))out.push({item:p,folderId:node.id});for(const c of(node.children||[]))pvPhotoActualItems(c,out);return out}
+function pvMovePhotoMob(ids,targetFid){
+  const wanted=new Set((ids||[]).map(String));if(!wanted.size)return 0;
+  const target=findFolder(PH.folders,targetFid);if(!target)return 0;
+  const ordered=pvPhotoActualItems(PH.folders).filter(x=>wanted.has(String(x.item.id))).map(x=>x.item);if(!ordered.length)return 0;
+  for(const fi of allFolders(PH.folders)){const f=findFolder(PH.folders,fi.id);if(f?.prompts)f.prompts=f.prompts.filter(x=>!wanted.has(String(x.id)))}
+  target.prompts=target.prompts||[];target.prompts.push(...ordered);return ordered.length;
+}
+function pvReorderPhoto(fid,dragId,targetId,pos){
+  const folder=findFolder(PH.folders,fid);if(!folder||dragId===targetId)return false;
+  const src=folder.prompts.findIndex(x=>String(x.id)===String(dragId));if(src<0)return false;
+  const[moved]=folder.prompts.splice(src,1);let dst=folder.prompts.findIndex(x=>String(x.id)===String(targetId));
+  if(dst<0)dst=folder.prompts.length;else if(pos==="after")dst++;folder.prompts.splice(dst,0,moved);return true;
+}
+function pvReorderPhotoCollection(collId,dragId,targetId,pos){
+  const col=(PH.collections||[]).find(c=>c.id===collId);if(!col||dragId===targetId)return false;
+  const ids=col.items||[];const src=ids.findIndex(id=>String(id)===String(dragId));if(src<0)return false;
+  const[moved]=ids.splice(src,1);let dst=ids.findIndex(id=>String(id)===String(targetId));
+  if(dst<0)dst=ids.length;else if(pos==="after")dst++;ids.splice(dst,0,moved);return true;
+}
+function pvClearPhotoDropMarks(){document.querySelectorAll(".pht-drop-before,.pht-drop-after,.pht-drag").forEach(x=>x.classList.remove("pht-drop-before","pht-drop-after","pht-drag"))}
 function mkPhotoTile(p,fid){
   const el=document.createElement("div");el.className="pht";el.dataset.pid=p.id;el.dataset.psrc=fid;
   const inBulk=isPh()&&phSt.bulkMode;const isSel=inBulk&&phSt.bulkSel.includes(p.id);
+  const canReorder=!inBulk&&!phSt.q&&!phSt.tagFilter;
   if(isSel)el.classList.add("pht-sel");
-  el.draggable=!inBulk;
-  if(!inBulk)el.addEventListener("dragstart",e=>{e.dataTransfer.setData("pid",p.id);e.dataTransfer.setData("psrc",fid)});
+  el.draggable=canReorder||isSel;
+  if(el.draggable)el.addEventListener("dragstart",e=>{
+    if(inBulk&&isSel){e.dataTransfer.setData("pv-photo-mob",JSON.stringify(phSt.bulkSel));e.dataTransfer.setData("psrc",fid)}
+    else{e.dataTransfer.setData("pid",p.id);e.dataTransfer.setData("psrc",fid)}
+    e.dataTransfer.effectAllowed="move";el.classList.add("pht-drag");
+  });
+  el.addEventListener("dragend",pvClearPhotoDropMarks);
+  if(canReorder){
+    el.addEventListener("dragover",e=>{const dragId=e.dataTransfer.getData("pid");if(!dragId||dragId===String(p.id))return;e.preventDefault();e.dataTransfer.dropEffect="move";const r=el.getBoundingClientRect(),pos=e.clientX-r.left<r.width/2?"before":"after";el.classList.toggle("pht-drop-before",pos==="before");el.classList.toggle("pht-drop-after",pos==="after");el.dataset.photoDropPos=pos});
+    el.addEventListener("dragleave",()=>{el.classList.remove("pht-drop-before","pht-drop-after");delete el.dataset.photoDropPos});
+    el.addEventListener("drop",e=>{e.preventDefault();e.stopPropagation();const dragId=e.dataTransfer.getData("pid"),src=e.dataTransfer.getData("psrc"),pos=el.dataset.photoDropPos||"after";pvClearPhotoDropMarks();delete el.dataset.photoDropPos;if(!dragId||dragId===String(p.id))return;
+      pushUndo();let changed=false;
+      if(phSt.collFilter)changed=pvReorderPhotoCollection(phSt.collFilter,dragId,p.id,pos);
+      else if(src===fid)changed=pvReorderPhoto(fid,dragId,p.id,pos);
+      else changed=pvMovePhotoMob([dragId],fid)>0;
+      if(changed){phSt.sort="custom";save();flash("Photo order updated");render()}
+    });
+  }
   const src=p.thumb||p.url||"";
   el.title=(p.title||"")+(p.w?` — ${p.w}×${p.h}`:"");
-  el.innerHTML=`${src?`<img class="pht-img" src="${escAttr(src)}" loading="lazy">`:`<div class="pht-none">${S.frame}</div>`}${inBulk?`<span class="pht-cb">${isSel?S.checkbox:S.checkboxEmpty}</span>`:""}${p.favorited?`<span class="pht-fv">${V.st(1)}</span>`:""}<button class="ib tile-more" title="More actions">${I.more}</button>`;
+  el.innerHTML=`${src?`<img class="pht-img" src="${escAttr(src)}" loading="lazy" draggable="false">`:`<div class="pht-none">${S.frame}</div>`}${inBulk?`<span class="pht-cb">${isSel?S.checkbox:S.checkboxEmpty}</span>`:""}${p.favorited?`<span class="pht-fv">${V.st(1)}</span>`:""}<button class="ib tile-more" title="More actions">${I.more}</button>`;
   const _im=el.querySelector(".pht-img");
   if(_im)_im.addEventListener("error",()=>{const d=document.createElement("div");d.className="pht-none";d.innerHTML=S.frame;_im.replaceWith(d)});
   const photoMenu=()=>[
-    {a:"view",l:"View",ic:I.open,fn:()=>openPhotoViewer(fid,p)},
+    {a:"view",l:"View / slideshow",ic:I.open,fn:()=>openPhotoViewer(fid,p)},
     {a:"src",l:"Open source page",fn:()=>{if(p.pageUrl)openUrl(p.pageUrl);else if(p.url)openUrl(p.url)}},
     {a:"cpy",l:"Copy image",ic:I.copy,fn:()=>pvCopyPhotoToClipboard(p)},
     {a:"cpf",l:"Copy to folders...",ic:I.copy,fn:()=>copyMd(p.id,fid)},
+    {a:"coll",l:"Add to collection...",ic:I.coll,fn:()=>collAssignMd(p.id)},
     {a:"dlo",l:"Download (original)",ic:I.dl,fn:()=>pvDownloadPhoto(p,"")},
     {a:"dlp",l:"Download as PNG",ic:I.dl,fn:()=>pvDownloadPhoto(p,"png")},
     {a:"dlj",l:"Download as JPEG",ic:I.dl,fn:()=>pvDownloadPhoto(p,"jpeg")},
@@ -5943,39 +6184,86 @@ function mkPhotoTile(p,fid){
   return el;
 }
 function _phKB(b){return b>1048576?(b/1048576).toFixed(1)+" MB":b>1024?Math.round(b/1024)+" KB":b+" B"}
-async function openPhotoViewer(fid,p){
-  let src=p.thumb||p.url||"",objUrl="";
-  try{if(typeof pvImgGet==="function"){const blob=await pvImgGet(p.id);if(blob){objUrl=URL.createObjectURL(blob);src=objUrl}}}catch(e){/* thumb fallback */}
-  const meta2=[p.w?p.w+"\u00d7"+p.h:"",p.mime?p.mime.replace("image/",""):"",p.bytes?_phKB(p.bytes):""].filter(Boolean).join(" \u00b7 ");
-  showModal(`<div class="phv"><img src="${escAttr(src)}" alt="">
-    <div class="phv-t">${esc(p.title||"")}</div>
-    ${meta2?`<div class="phv-m">${esc(meta2)}${p.hasBlob===false?' \u00b7 <span style="color:var(--dn)">link only</span>':""}</div>`:""}
-    <div class="brow" style="flex-wrap:wrap;justify-content:flex-start">
-      ${p.pageUrl?`<button class="bs" id="phvPage">Source page</button>`:""}
-      ${p.url&&!p.url.startsWith("data:")?`<button class="bs" id="phvOrig">Original</button>`:""}
-      ${p.hasBlob===false&&p.url?`<button class="bs" id="phvFetch">Re-fetch</button>`:""}
-      <button class="bs" id="phvDl">Download</button>
-      <button class="bs dng" id="phvDel">Delete</button>
-      <span style="flex:1"></span><button class="bg-btn" id="phvX">Close</button>
-    </div></div>`,mc=>{
-    const done=()=>{if(objUrl)try{URL.revokeObjectURL(objUrl)}catch(e){/* released */}};
-    mc.querySelector("#phvX").addEventListener("click",()=>{done();closeModal()});
-    mc.querySelector("#phvPage")?.addEventListener("click",()=>openUrl(p.pageUrl));
-    mc.querySelector("#phvOrig")?.addEventListener("click",()=>openUrl(p.url));
-    mc.querySelector("#phvFetch")?.addEventListener("click",()=>{
-      flash("Fetching\u2026");
-      chrome.runtime.sendMessage({type:"REFETCH_PHOTO",id:p.id,url:p.url},r2=>{
-        if(r2?.success){flash("OK Fetched");done();closeModal();loadData().then(render)}
-        else flash("Fetch failed \u2014 source may be gone");
-      });
-    });
-    mc.querySelector("#phvDl").addEventListener("click",async()=>{
-      let href=src;
-      const a=document.createElement("a");a.href=href;a.download=(p.title||"image").replace(/[^\w.-]+/g,"_");a.click();
-    });
-    mc.querySelector("#phvDel").addEventListener("click",()=>{done();closeModal();delMd("prompt",p.id,p.title)});
+function pvPhotoViewerItems(fid){
+  if(phSt.collFilter){const col=(PH.collections||[]).find(c=>c.id===phSt.collFilter);if(col)return getCollItems(col.id)}
+  const f=findFolder(PH.folders,fid);return(f?.prompts||[]).map(x=>({...x,folderId:fid,folderName:f.name}));
+}
+function pvStartFolderSlideshow(fid){const f=findFolder(PH.folders,fid),items=f?allItems(f):[];if(!items.length){flash("No photos in this folder");return}openPhotoViewer(items[0].folderId,items[0],items)}
+async function openPhotoViewer(fid,p,scopeItems){
+  const seq=(scopeItems?.length?[...scopeItems]:pvPhotoViewerItems(fid));if(!seq.some(x=>String(x.id)===String(p.id)))seq.unshift({...p,folderId:fid});
+  let idx=Math.max(0,seq.findIndex(x=>String(x.id)===String(p.id))),objUrl="",timer=0,loadToken=0;
+  showModal(`<div class="phv"><div class="phv-stage"><button class="phv-nav phv-prev" id="phvPrev" title="Previous photo" aria-label="Previous photo">‹</button><img id="phvImg" alt=""><button class="phv-nav phv-next" id="phvNext" title="Next photo" aria-label="Next photo">›</button></div>
+    <div style="display:flex;align-items:center;gap:6px"><div class="phv-t" id="phvTitle"></div><div class="phv-count" id="phvCount"></div></div><div class="phv-m" id="phvMeta"></div>
+    <div class="brow" style="flex-wrap:wrap;justify-content:flex-start"><button class="bs" id="phvPlay">▶ Slideshow</button><button class="bs" id="phvPage">Source page</button><button class="bs" id="phvOrig">Original</button><button class="bs" id="phvFetch">Re-fetch</button><button class="bs" id="phvDl">Download</button><button class="bs dng" id="phvDel">Delete</button><span style="flex:1"></span><button class="bg-btn" id="phvX">Close</button></div></div>`,mc=>{
+    const img=mc.querySelector("#phvImg"),play=mc.querySelector("#phvPlay");
+    const release=()=>{if(objUrl){try{URL.revokeObjectURL(objUrl)}catch{}objUrl=""}};
+    const stop=()=>{if(timer){clearInterval(timer);timer=0}if(play)play.textContent="▶ Slideshow"};
+    const cleanup=()=>{stop();release();document.removeEventListener("keydown",keys);observer.disconnect()};
+    const draw=async()=>{const token=++loadToken,cur=seq[idx];release();let src=cur.thumb||cur.url||"";try{if(typeof pvImgGet==="function"){const blob=await pvImgGet(cur.id);if(blob&&token===loadToken){objUrl=URL.createObjectURL(blob);src=objUrl}}}catch{}if(token!==loadToken)return;
+      img.src=src;img.alt=cur.title||"Photo";mc.querySelector("#phvTitle").textContent=cur.title||"Untitled photo";mc.querySelector("#phvCount").textContent=seq.length>1?`${idx+1} / ${seq.length}`:"";
+      const meta2=[cur.w?cur.w+"×"+cur.h:"",cur.mime?cur.mime.replace("image/",""):"",cur.bytes?_phKB(cur.bytes):""].filter(Boolean).join(" · ");mc.querySelector("#phvMeta").innerHTML=esc(meta2)+(cur.hasBlob===false?' · <span style="color:var(--dn)">link only</span>':"");
+      mc.querySelector("#phvPage").style.display=cur.pageUrl?"":"none";mc.querySelector("#phvOrig").style.display=cur.url&&!cur.url.startsWith("data:")?"":"none";mc.querySelector("#phvFetch").style.display=cur.hasBlob===false&&cur.url?"":"none";
+    };
+    const step=n=>{idx=(idx+n+seq.length)%seq.length;draw()};
+    const keys=e=>{if(!$("modalC")?.contains(mc))return;if(e.key==="ArrowLeft"){e.preventDefault();step(-1)}else if(e.key==="ArrowRight"){e.preventDefault();step(1)}else if(e.key===" "){e.preventDefault();play.click()}};
+    const observer=new MutationObserver(()=>{if(!document.body.contains(mc))cleanup()});observer.observe($("modalC"),{childList:true});document.addEventListener("keydown",keys);
+    mc.querySelector("#phvPrev").addEventListener("click",()=>step(-1));mc.querySelector("#phvNext").addEventListener("click",()=>step(1));
+    play.addEventListener("click",()=>{if(timer){stop();return}timer=setInterval(()=>step(1),3500);play.textContent="❚❚ Pause"});
+    mc.querySelector("#phvX").addEventListener("click",()=>{cleanup();closeModal()});
+    mc.querySelector("#phvPage").addEventListener("click",()=>{const cur=seq[idx];if(cur.pageUrl)openUrl(cur.pageUrl)});
+    mc.querySelector("#phvOrig").addEventListener("click",()=>{const cur=seq[idx];if(cur.url)openUrl(cur.url)});
+    mc.querySelector("#phvFetch").addEventListener("click",()=>{const cur=seq[idx];flash("Fetching…");chrome.runtime.sendMessage({type:"REFETCH_PHOTO",id:cur.id,url:cur.url},r2=>{if(r2?.success){flash("OK Fetched");loadData().then(()=>{cleanup();closeModal();render()})}else flash("Fetch failed — source may be gone")})});
+    mc.querySelector("#phvDl").addEventListener("click",()=>pvDownloadPhoto(seq[idx],""));
+    mc.querySelector("#phvDel").addEventListener("click",()=>{const cur=seq[idx];cleanup();closeModal();delMd("prompt",cur.id,cur.title)});
+    if(seq.length<2){mc.querySelector("#phvPrev").style.display="none";mc.querySelector("#phvNext").style.display="none";play.style.display="none"}draw();
   });
 }
+
+async function pvPhotoLoadBlob(p){
+  try{if(typeof pvImgGet==="function"){const stored=await pvImgGet(p.id);if(stored)return stored}}catch{}
+  if(p.url){try{const r=await fetch(p.url);if(r.ok||p.url.startsWith("data:"))return await r.blob()}catch{}}
+  return null;
+}
+function pvBlobDataUrl(blob){return new Promise((resolve,reject)=>{const fr=new FileReader();fr.onload=()=>resolve(fr.result);fr.onerror=()=>reject(fr.error||new Error("Could not read image"));fr.readAsDataURL(blob)})}
+function pvPhotoBaseName(p){return((p.title||"photo").replace(/[^a-zA-Z0-9 _-]+/g,"").trim().replace(/\s+/g,"-")||"photo").slice(0,80)}
+function pvPhotoExtension(blob,p){const t=(blob?.type||p.mime||"").toLowerCase();return t.includes("jpeg")?"jpg":t.includes("png")?"png":t.includes("webp")?"webp":t.includes("gif")?"gif":t.includes("avif")?"avif":t.includes("svg")?"svg":"img"}
+async function pvPreparePhotoReport(items){
+  const out=[],used=new Set();
+  for(let i=0;i<items.length;i++){
+    const p=items[i],blob=await pvPhotoLoadBlob(p);let w=Number(p.w)||0,h=Number(p.h)||0;
+    if(blob&&(!w||!h)){try{const bmp=await createImageBitmap(blob);w=bmp.width;h=bmp.height;if(bmp.close)bmp.close()}catch{}}
+    let name=pvPhotoBaseName(p)+"."+pvPhotoExtension(blob,p),n=2;while(used.has(name.toLowerCase())){name=pvPhotoBaseName(p)+"-"+(n++)+"."+pvPhotoExtension(blob,p)}used.add(name.toLowerCase());
+    let dataUrl="";if(blob)try{dataUrl=await pvBlobDataUrl(blob)}catch{}
+    out.push({photo:p,blob,dataUrl,w,h,fileName:name});
+  }
+  return out;
+}
+function pvBuildPhotoReportHtml(title,records,embedded){
+  const date=new Date().toISOString().slice(0,10),available=records.filter(r=>r.blob).length;
+  let html=`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${esc(title)} — Photo Report</title><style>*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#171717;background:#fff;max-width:1100px;margin:32px auto;padding:0 24px;line-height:1.45}h1{font-size:25px;margin:0 0 4px}.summary{color:#666;font-size:12px;margin:0 0 28px}.photo{margin:0 0 34px;break-inside:avoid;page-break-inside:avoid;border-top:1px solid #ddd;padding-top:18px}.photo h2{font-size:16px;margin:0 0 4px}.meta,.source{font-size:11px;color:#666;margin:3px 0}.photo img{display:block;width:auto;height:auto;max-width:100%;margin:12px 0 0;object-fit:contain;image-rendering:auto}.missing{padding:22px;border:1px dashed #999;margin-top:10px;color:#777}.native{font-size:10px;color:#555;margin-top:5px}@media print{body{max-width:none;margin:0;padding:12mm}.photo{break-inside:avoid;page-break-inside:avoid}.photo img{width:auto!important;height:auto!important;max-width:100%!important}}</style></head><body><h1>${esc(title)}</h1><p class="summary">${records.length} photo${records.length===1?"":"s"} · ${available} with original image bytes · compiled ${date}. Images retain their original files and intrinsic dimensions; small images are never enlarged.</p>`;
+  records.forEach((r,i)=>{const p=r.photo,src=r.blob?(embedded?r.dataUrl:"images/"+encodeURIComponent(r.fileName)):"",dims=r.w&&r.h?`${r.w}×${r.h}`:"dimensions unavailable",kind=(r.blob?.type||p.mime||"").replace("image/","");html+=`<section class="photo"><h2>${i+1}. ${esc(p.title||"Untitled photo")}</h2><div class="meta">${esc([dims,kind,r.blob?_phKB(r.blob.size):"image bytes unavailable",p.folderName||""].filter(Boolean).join(" · "))}</div>`;
+    if(src)html+=`<img src="${escAttr(src)}" alt="${escAttr(p.title||"Photo")}"${r.w?` width="${r.w}"`:""}${r.h?` height="${r.h}"`:""}><div class="native">Native size: ${esc(dims)}. Display may shrink to fit the page but will not upscale.</div>`;else html+=`<div class="missing">Image bytes are unavailable in this vault. The metadata and source link are retained below.</div>`;
+    if(p.pageUrl||p.url)html+=`<div class="source">Source: <a href="${escAttr(safeUrl(p.pageUrl||p.url)||"")}">${esc(p.pageUrl||p.url)}</a></div>`;html+=`</section>`});
+  return html+`</body></html>`;
+}
+function pvBuildPhotoReportMarkdown(title,records){let md=`# ${title}\n\n${records.length} photos. Original files are in the \`images\` folder; dimensions are recorded without resampling.\n\n`;records.forEach((r,i)=>{const p=r.photo,d=r.w&&r.h?`${r.w}×${r.h}`:"dimensions unavailable";md+=`## ${i+1}. ${p.title||"Untitled photo"}\n\n- Native dimensions: ${d}\n- Format: ${(r.blob?.type||p.mime||"unknown").replace("image/","")}\n- Folder: ${p.folderName||""}\n`;if(r.blob)md+=`\n![${(p.title||"Photo").replace(/[\[\]]/g,"")}](images/${encodeURIComponent(r.fileName)})\n`;if(p.pageUrl||p.url)md+=`\nSource: ${p.pageUrl||p.url}\n`;md+="\n"});return md}
+function pvDownloadBrowserBlob(blob,name){const url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),10000)}
+function pvPrintPhotoReport(html){
+  const blobUrl=URL.createObjectURL(new Blob([html],{type:"text/html"})),frame=document.createElement("iframe");frame.style.cssText="position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:.01";frame.src=blobUrl;document.body.appendChild(frame);
+  const clean=()=>{try{frame.remove()}catch{}URL.revokeObjectURL(blobUrl)};frame.onload=()=>setTimeout(()=>{try{frame.contentWindow.focus();frame.contentWindow.print();frame.contentWindow.addEventListener("afterprint",clean,{once:true})}catch{clean();flash("Print preview could not open")}},100);setTimeout(clean,120000);
+}
+function pvPhotoReportSlug(name){return(name||"photo-collection").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,70)||"photo-collection"}
+function pvOpenPhotoReport(scope){
+  const items=scope?.items||[],title=scope?.name||"Photo Collection";if(!items.length){flash("No photos to report");return}
+  showModal(`<h3>${esc(title)} — Photo Report</h3><p>${items.length} photo${items.length===1?"":"s"} will be compiled for printing or aggregate LLM review.</p><div class="ph-report-note"><strong>Native-quality rule:</strong> reports use each stored original file directly. They never draw through canvas, enlarge thumbnails, or upscale small images. Large images may shrink only for page display.</div><div class="exp-opt" id="phReportPrint"><div class="eo-t">Print / Save PDF</div><div class="eo-d">Self-contained printable report with original images</div></div><div class="exp-opt" id="phReportHtml"><div class="eo-t">Self-contained HTML</div><div class="eo-d">One portable report with original image bytes embedded</div></div><div class="exp-opt" id="phReportZip"><div class="eo-t">LLM review package (.zip)</div><div class="eo-d">HTML + Markdown index + original image files</div></div><div class="brow"><button class="bg-btn" id="phReportX">Cancel</button></div>`,mc=>{
+    let prepared=null;const need=async action=>{mc.querySelectorAll("button,.exp-opt").forEach(x=>x.style.pointerEvents="none");flash(`Preparing ${items.length} original photos…`);try{prepared=prepared||await pvPreparePhotoReport(items);closeModal();await action(prepared)}catch(e){closeModal();flash("Photo report failed: "+(e.message||"unknown error"))}};
+    mc.querySelector("#phReportX").addEventListener("click",closeModal);
+    mc.querySelector("#phReportPrint").addEventListener("click",()=>need(records=>pvPrintPhotoReport(pvBuildPhotoReportHtml(title,records,true))));
+    mc.querySelector("#phReportHtml").addEventListener("click",()=>need(records=>{pvDownloadBrowserBlob(new Blob([pvBuildPhotoReportHtml(title,records,true)],{type:"text/html"}),pvPhotoReportSlug(title)+"-photo-report.html");flash("Photo report downloaded")}));
+    mc.querySelector("#phReportZip").addEventListener("click",()=>need(async records=>{const enc=new TextEncoder(),files=[{name:"photo-report.html",data:enc.encode(pvBuildPhotoReportHtml(title,records,false))},{name:"photo-report.md",data:enc.encode(pvBuildPhotoReportMarkdown(title,records))}];for(const r of records)if(r.blob)files.push({name:"images/"+r.fileName,data:new Uint8Array(await r.blob.arrayBuffer())});const zip=pvMakeZip(files);pvDownloadBrowserBlob(new Blob([zip],{type:"application/zip"}),pvPhotoReportSlug(title)+"-llm-review.zip");flash(`LLM package exported with ${files.length-2} original images`)}));
+  });
+}
+function pvOpenPhotoReportForFolder(fid){const f=findFolder(PH.folders,fid);if(!f){flash("Photo folder not found");return}pvOpenPhotoReport({name:f.name,items:allItems(f),kind:"folder"})}
 
 // ── Compact bookmark card (dense one-liner) ──
 function mkCompactCard(p,fid){
@@ -7656,12 +7944,12 @@ function spPinToPanel(bookmarkId){
 
 
 // ═══════ ACTIONS ═══════
-function addFolder(){const s2=st(),d2=dt(),p=findFolder(d2.folders,s2.sel);if(!p||getDepth(p,d2.folders)>=MAX_D-1){flash("Max depth");return}pushUndo();const id=generateId(d2);p.children=p.children||[];p.children.push({id,name:"New Folder",children:[],prompts:[],color:""});s2.exp[s2.sel]=1;save();render();rnMd(id,"New Folder")}
+function addFolder(){const s2=st(),d2=dt();let p=findFolder(d2.folders,s2.sel);if(!p){s2.sel=rId();p=findFolder(d2.folders,s2.sel)}if(!p){flash("Root folder missing");return}if(getDepth(p,d2.folders)>=MAX_D-1){flash("Max depth");return}pushUndo();const id=generateId(d2);p.children=p.children||[];p.children.push({id,name:"New Folder",children:[],prompts:[],color:""});s2.exp[s2.sel]=1;save();render();rnMd(id,"New Folder")}
 function addTopFolder(){const s2=st(),d2=dt(),root=findFolder(d2.folders,rId());if(!root){flash("Root folder missing");return}pushUndo();const id=generateId(d2);root.children=root.children||[];root.children.push({id,name:"New Folder",children:[],prompts:[],color:""});s2.sel=rId();s2.exp[rId()]=1;save();render();rnMd(id,"New Folder")}
 function addItem(){
   if(isPh()){addPhotoByUrlMd();return}
-  const s2=st();s2.eId="new";s2.eTi="";s2.eCo="";s2.eTg="";s2.eUrl="";s2.ePlat=isI()?"midjourney":"";s2._nextId="";s2._nextTitle="";s2._params=null;s2._eGoal="";s2._eInjectIntent="user";s2._eVersionNote="";if(isI())s2._capSel=[];if(isK()){s2._skFiles={};s2._skView="SKILL.md"}s2.view="edit";render()}
-function openItem(p){const s2=st();if(isP())recordVaultRecent({kind:"prompt",action:"open",id:p.id,folderId:s2.sel,title:p.title});if(isS())recordVaultRecent({kind:"clip",action:"open",id:p.id,folderId:s2.sel,title:p.title});s2.eId=p.id;s2.eTi=p.title;s2.eCo=p.content||"";s2.eTg=(p.tags||[]).join(", ");s2.eUrl=p.url||"";s2.ePlat=p.platform||"";s2._nextId=p.nextId||"";const nxt=s2._nextId?allItems(P.folders).find(x=>x.id===s2._nextId):null;s2._nextTitle=nxt?nxt.title:"";s2._params=isI()?((!p.platform||p.platform==="midjourney")&&p.params?deepClone(p.params):null):(p.params?deepClone(p.params):null);s2._eGoal=p.goal||"";s2._eInjectIntent=p.injectIntent||"user";s2._eVersionNote="";s2.view="edit";if(isI())s2._capSel=p._capSel?[...p._capSel]:[];if(isK())s2._skFiles=p.files?deepClone(p.files):{};render()}
+  const s2=st();s2.eId="new";s2.eTi="";s2.eCo="";s2.eTg="";s2.eUrl="";s2.ePlat=isI()?"midjourney":"";s2._nextId="";s2._nextTitle="";s2._params=null;s2._eGoal="";s2._eInjectIntent="user";s2._eVersionNote="";if(isI())s2._capSel=[];if(isK()){s2._skFiles={};s2._skView="SKILL.md";s2._skSummary=""}s2.view="edit";render()}
+function openItem(p){const s2=st();if(isP())recordVaultRecent({kind:"prompt",action:"open",id:p.id,folderId:s2.sel,title:p.title});if(isS())recordVaultRecent({kind:"clip",action:"open",id:p.id,folderId:s2.sel,title:p.title});s2.eId=p.id;s2.eTi=p.title;s2.eCo=p.content||"";s2.eTg=(p.tags||[]).join(", ");s2.eUrl=p.url||"";s2.ePlat=p.platform||"";s2._nextId=p.nextId||"";const nxt=s2._nextId?allItems(P.folders).find(x=>x.id===s2._nextId):null;s2._nextTitle=nxt?nxt.title:"";s2._params=isI()?((!p.platform||p.platform==="midjourney")&&p.params?deepClone(p.params):null):(p.params?deepClone(p.params):null);s2._eGoal=p.goal||"";s2._eInjectIntent=p.injectIntent||"user";s2._eVersionNote="";s2.view="edit";if(isI())s2._capSel=p._capSel?[...p._capSel]:[];if(isK()){s2._skFiles=p.files?deepClone(p.files):{};s2._skSummary=p.description||parseSkillYaml(p.content).description||""}render()}
 function saveItem(silent,skipSimilarCheck){
   const s2=st(),d2=dt();
   if(!s2.eTi.trim()&&!s2.eCo.trim()&&!s2.eUrl.trim()){if(!silent)flash("Add a title, content, or URL before saving");return}
@@ -7684,13 +7972,13 @@ function saveItem(silent,skipSimilarCheck){
     item._lastModifiedBy=lastMod;
     if(isP()){item.platform=s2.ePlat;item.nextId=s2._nextId||"";if(s2._params)item.params=deepClone(s2._params);item.goal=(s2._eGoal||"").trim();item.injectIntent=s2._eInjectIntent||"user"}
     if(isI()){item.platform=s2.ePlat||"midjourney";if(s2.ePlat==="midjourney"&&s2._params)item.params=deepClone(s2._params);if(s2._capSel)item._capSel=[...s2._capSel]}if(isL())item.url=s2.eUrl;
-    if(isK()){const ym=parseSkillYaml(s2.eCo);if(ym.name&&!s2.eTi.trim())item.title=ym.name;if(ym.description)item.description=ym.description;item.files=s2._skFiles||{}}
+    if(isK()){const ym=parseSkillYaml(s2.eCo);if(ym.name&&!s2.eTi.trim())item.title=ym.name;item.description=(s2._skSummary||ym.description||"").trim();item.files=s2._skFiles||{}}
     f.prompts.push(item);s2.eId=item.id}
   else{const p=f.prompts.find(x=>x.id===s2.eId);if(p){if(!silent&&(p.content!==s2.eCo||p.title!==s2.eTi.trim())){p.versions=p.versions||[];p.versions.push({title:p.title,content:p.content,tags:[...(p.tags||[])],saved:Date.now(),note:(s2._eVersionNote||"").trim()});if(p.versions.length>20)p.versions=p.versions.slice(-20)}
     p.title=s2.eTi.trim()||"Untitled";p.content=s2.eCo;p.tags=tg;p.modified=Date.now();p._lastModifiedBy=lastMod;
     if(isP()){p.platform=s2.ePlat;p.nextId=s2._nextId||"";p.params=s2._params?deepClone(s2._params):null;p.goal=(s2._eGoal||"").trim();p.injectIntent=s2._eInjectIntent||"user"}
     if(isI()){p.platform=s2.ePlat||"midjourney";p.params=s2.ePlat==="midjourney"&&s2._params?deepClone(s2._params):null;if(s2._capSel)p._capSel=[...s2._capSel]}if(isL())p.url=s2.eUrl;
-    if(isK()){const ym=parseSkillYaml(s2.eCo);if(ym.description)p.description=ym.description;if(s2._skFiles)p.files=s2._skFiles}}}
+    if(isK()){const ym=parseSkillYaml(s2.eCo);p.description=(s2._skSummary||ym.description||"").trim();if(s2._skFiles)p.files=s2._skFiles}}}
   save();if(!silent){
     if(isB()&&s2.eUrl){const f=findFolder(dt().folders,s2.sel);const p=f?.prompts?.find(x=>x.id===s2.eId);if(p?.url){try{chrome.runtime.sendMessage({type:"BM_SYNC_PUSH",item:p})}catch{}}}
     // Visual confirmation on the save button before navigating away
@@ -7771,6 +8059,14 @@ function handleUse(fid,p,act){
 function handleDrop(e,tid,pos){
   pos=pos||"inside";
   const pid=e.dataTransfer.getData("pid"),ps=e.dataTransfer.getData("psrc"),fid=e.dataTransfer.getData("fid"),d2=dt();
+
+  // Photos can travel as a selected "mob". Removing first and appending once
+  // preserves the gallery order and prevents duplicates when sources differ.
+  const photoMobRaw=isPh()?e.dataTransfer.getData("pv-photo-mob"):"";
+  if(photoMobRaw&&pos==="inside"){
+    let ids=[];try{ids=JSON.parse(photoMobRaw)}catch{/* malformed external drag */}
+    if(Array.isArray(ids)&&ids.length){pushUndo();const moved=pvMovePhotoMob(ids,tid);if(moved){phSt.bulkSel=[];phSt.bulkMode=false;phSt.sort="custom";save();flash(`Moved ${moved} selected photos`);render()}return}
+  }
 
   // ── Card dropped on folder (move to folder) — unchanged ──
   if(pid&&ps&&ps!==tid&&pos==="inside"){pushUndo();const src=findFolder(d2.folders,ps),tgt=findFolder(d2.folders,tid);if(src&&tgt){const i=src.prompts.findIndex(p=>p.id===pid);if(i>=0){const[p]=src.prompts.splice(i,1);tgt.prompts=tgt.prompts||[];tgt.prompts.push(p);save();flash("Moved");render()}}}
@@ -8168,11 +8464,21 @@ function toggleQuickLinks(){
     const url="https://"+p.urls[0];
     h+=`<div class="ql-item" data-ql-url="${esc(url)}" title="${esc(p.name)}"><span class="ql-item-icon">${p.icon}</span><span class="ql-item-name">${esc(p.name.split("/")[0].trim())}</span></div>`;
   });
-  h+=`</div><div class="ql-sep"></div><div class="ql-edit" id="qlSettings">Manage platforms in Settings</div>`;
+  h+=`</div>`;
+  const photoCols=(PH?.collections||[]).filter(c=>(c.items||[]).some(id=>findItemGlobal(PH.folders,id)));
+  if(photoCols.length){
+    h+=`<div class="ql-sep"></div><div class="ql-title">Photo Collections</div><div class="ql-grid">`;
+    photoCols.forEach(c=>{h+=`<div class="ql-item" data-ql-photo="${escAttr(c.id)}" title="Open ${escAttr(c.name)}"><span class="ql-item-icon">${S.frame}</span><span class="ql-item-name">${esc(c.name)}</span><span style="font-size:8px;color:var(--dm)">${(c.items||[]).length}</span></div>`});
+    h+=`</div>`;
+  }
+  h+=`<div class="ql-sep"></div><div class="ql-edit" id="qlSettings">Manage platforms in Settings</div>`;
   drop.innerHTML=h;
   drop.classList.add("open");
   drop.querySelectorAll("[data-ql-url]").forEach(el=>{
     el.addEventListener("click",()=>{openUrl(el.dataset.qlUrl);drop.classList.remove("open")});
+  });
+  drop.querySelectorAll("[data-ql-photo]").forEach(el=>{
+    el.addEventListener("click",()=>{aTab="photos";phSt.view="list";phSt.q="";phSt.tagFilter="";phSt.collFilter=el.dataset.qlPhoto;drop.classList.remove("open");render()});
   });
   $("qlSettings")?.addEventListener("click",()=>{drop.classList.remove("open");aTab="settings";render()});
   setTimeout(()=>document.addEventListener("click",function qlClose(e){
@@ -8268,6 +8574,7 @@ $("tabK")?.addEventListener("click",()=>{aTab="skills";render()});
 $("tabG")?.addEventListener("click",()=>{aTab="customgpts";render()});
 $("tabPH")?.addEventListener("click",()=>{aTab="photos";render()});
 $("tabCC")?.addEventListener("click",()=>{aTab="claudecmds";render()});
+$("tabLS")?.addEventListener("click",()=>{aTab="lists";render()});
 $("tabW")?.addEventListener("click",()=>{aTab="workspace";render()});
 $("primaryFind")?.addEventListener("click",openUniversalSearch);
 // ── Right-click on empty content area: create/paste without hunting for buttons ──
@@ -8280,11 +8587,13 @@ $("main")?.addEventListener("contextmenu",e=>{
   if(isP())items.push({a:"paste",l:"Paste as Prompt",ic:I.copy,fn:async()=>{try{const t=await navigator.clipboard.readText();if(!t||!t.trim()){flash("Clipboard is empty");return}const s2=st(),d2=dt(),f=findFolder(d2.folders,s2.sel);if(!f){flash("No folder selected");return}pushUndo();const id=generateId(d2);const title=(t.split("\n")[0]||"").slice(0,80).trim()||"Pasted Prompt";f.prompts=f.prompts||[];f.prompts.push({id,title,content:t.trim(),tags:[],created:Date.now(),modified:Date.now(),favorited:false,usageCount:0,versions:[]});save();render();flash("Prompt created: "+title)}catch{flash("Clipboard unavailable")}}});
   const fvMode=isP()?"prompts":isI()?"imgprompts":isS()?"clips":isB()?"bookmarks":isN()?"notes":isK()?"skills":isG()?"customgpts":isPh()?"photos":"";
   if(fvMode)items.push({sep:1},{a:"fv2",l:"Open Full View",ic:I.open,fn:()=>openFullView(fvMode)});
+  const quick=pvQuickFolderResolved();
+  if(quick.length){items.push({sep:1});quick.forEach(ref=>items.push({a:"qf",l:`Quick: ${ref.label} › ${ref.name}`,ic:S.star,fn:()=>pvQuickFolderGo(ref)}))}
   showContextMenu(e,items);
 });
 // ── Right-click a tab: jump to root or pop out the full-window view ──
 (()=>{
-  const tabMeta={tabP:["prompts","Prompts","prompts"],tabI:["imgprompts","Image Prompts","imgprompts"],tabS:["snippets","Clips","clips"],tabB:["bookmarks","Bookmarks","bookmarks"],tabN:["notes","Notes","notes"],tabK:["skills","Skills","skills"],tabG:["customgpts","GPTs","customgpts"],tabPH:["photos","Photos","photos"],tabW:["workspace","Workspace",""]};
+  const tabMeta={tabP:["prompts","Prompts","prompts"],tabI:["imgprompts","Image Prompts","imgprompts"],tabS:["snippets","Clips","clips"],tabB:["bookmarks","Bookmarks","bookmarks"],tabN:["notes","Notes","notes"],tabK:["skills","Claude Tools › Skills","skills"],tabCC:["claudecmds","Claude Tools › Commands",""],tabG:["customgpts","GPTs","customgpts"],tabPH:["photos","Photos","photos"],tabW:["workspace","Workspace",""]};
   Object.entries(tabMeta).forEach(([id,[tab,name,fvMode]])=>{
     $(id)?.addEventListener("contextmenu",e=>{
       const items=[{a:"go",l:"Go to "+name,fn:()=>{aTab=tab;render()}}];
@@ -8569,7 +8878,7 @@ function suggestTags(content){
 
 // ═══════ FEATURE: SYNC EXPORT/IMPORT ═══════
 function syncExportMd(){
-  const all={prompts:P,imgprompts:IP,skills:KL,snippets:SN,bookmarks:BM,notes:NT,customgpts:GP,photos:PH,config:cfg,exportedAt:new Date().toISOString(),version:vaultBackupExportVersion()};
+  const all={prompts:P,imgprompts:IP,skills:KL,snippets:SN,bookmarks:BM,notes:NT,customgpts:GP,photos:PH,lists:LS,config:cfg,exportedAt:new Date().toISOString(),version:vaultBackupExportVersion()};
   const json=JSON.stringify(all,null,2);const size=(json.length/1024).toFixed(1);
   showModal(`<h3>Sync Export</h3><p>${size}KB · ${allItems(P.folders).length}p · ${allItems(KL.folders).length}sk · ${allItems(SN.folders).length}s · ${allItems(BM.folders).length}b · ${allItems(NT.folders).length}n</p>
     <div class="exp-opt" data-sf="file"><div class="eo-t">${I.dl} Save to file</div><div class="eo-d">Download .json backup — transfer between machines</div></div>
@@ -8588,7 +8897,7 @@ function syncExportMd(){
 // like the rest of config. Forward-compatible: any content tab not present in
 // a saved order is appended (so future tabs show up automatically).
 
-const CONTENT_TAB_IDS = ["tabP", "tabI", "tabS", "tabB", "tabN", "tabK", "tabG", "tabPH", "tabCC", "tabW"];
+const CONTENT_TAB_IDS = ["tabP", "tabI", "tabS", "tabB", "tabN", "tabK", "tabG", "tabPH", "tabCC", "tabLS", "tabW"];
 
 function tabOrderResolved() {
   const saved = (cfg && Array.isArray(cfg.tabOrder)) ? cfg.tabOrder : [];
@@ -9371,9 +9680,135 @@ function showBatchPreview(parsed) {
   });
 }
 
+// ═══════ BOOKMARKS-ONLY BACKUP / RESTORE ═══════
+const PV_BOOKMARKS_FORMAT="prompt-vault-bookmarks";
+const PV_BOOKMARKS_SAFETY_KEY="pv_bookmarks_restore_snapshot";
+
+function pvBookmarksFromPayload(payload){
+  const valid=s=>s&&s.folders&&typeof s.folders==="object";
+  if(payload?._format===PV_BOOKMARKS_FORMAT&&valid(payload.bookmarks))return payload.bookmarks;
+  if(valid(payload?.bookmarks))return payload.bookmarks; // whole-vault backup: use only its bookmark slice
+  if(valid(payload))return payload; // legacy bookmarks-only JSON exported before the wrapper existed
+  return null;
+}
+function pvBookmarkSummary(store){
+  let items=0,folders=0;
+  (function walk(n,root){if(!root)folders++;items+=(n?.prompts||[]).length;(n?.children||[]).forEach(ch=>walk(ch,false))})(store?.folders,true);
+  return{items,folders,collections:(store?.collections||[]).length,panels:(store?.sectionPanels||[]).length};
+}
+function pvPrepareBookmarkStore(raw){
+  if(!raw?.folders||typeof raw.folders!=="object")throw new Error("No bookmark folder tree found");
+  const store=deepClone(raw),seen=new Set();let next=Math.max(1,Number(store.nextId)||1);
+  const fresh=()=>{let id;do{id="i_"+(next++)}while(seen.has(id));seen.add(id);return id};
+  function walk(n,isRoot){
+    if(!n||typeof n!=="object")throw new Error("Invalid folder in backup");
+    n.id=isRoot?"broot":((typeof n.id==="string"&&!seen.has(n.id))?(seen.add(n.id),n.id):fresh());
+    n.name=typeof n.name==="string"?n.name:(isRoot?"My Bookmarks":"Imported Folder");
+    n.color=typeof n.color==="string"?n.color:"";
+    n.children=Array.isArray(n.children)?n.children:[];n.prompts=Array.isArray(n.prompts)?n.prompts:[];
+    n.prompts=n.prompts.filter(p=>p&&typeof p==="object").map(p=>{p.id=(typeof p.id==="string"&&!seen.has(p.id))?(seen.add(p.id),p.id):fresh();p.title=String(p.title||p.name||p.url||"Untitled bookmark");p.content=String(p.content||"");p.url=String(p.url||"");p.tags=Array.isArray(p.tags)?p.tags:[];return p});
+    n.children.forEach(ch=>walk(ch,false));
+  }
+  seen.add("broot");walk(store.folders,true);store.nextId=next;store.trash=Array.isArray(store.trash)?store.trash:[];store.collections=Array.isArray(store.collections)?store.collections:[];store.sectionPanels=Array.isArray(store.sectionPanels)?store.sectionPanels:[];
+  return store;
+}
+function pvBookmarkIdentity(item){
+  const url=(item?.url||"").trim().toLowerCase().replace(/\/$/,"");
+  return url?"u:"+url:"t:"+String(item?.title||"").trim().toLowerCase()+"\u0000"+String(item?.content||"").trim().toLowerCase();
+}
+function pvMergeBookmarkStore(incoming){
+  const idMap=new Map();let added=0,skipped=0,folders=0;
+  function mergeNode(target,source){
+    target.prompts=target.prompts||[];target.children=target.children||[];
+    const identities=new Map(target.prompts.map(p=>[pvBookmarkIdentity(p),p.id]));
+    for(const raw of(source.prompts||[])){
+      const key=pvBookmarkIdentity(raw),existing=identities.get(key);
+      if(existing){idMap.set(raw.id,existing);skipped++;continue}
+      const item=deepClone(raw);item.id=generateId(BM);target.prompts.push(item);identities.set(key,item.id);idMap.set(raw.id,item.id);added++;
+    }
+    for(const srcChild of(source.children||[])){
+      let dst=target.children.find(ch=>(ch.name||"").trim().toLowerCase()===(srcChild.name||"").trim().toLowerCase());
+      if(!dst){dst={id:generateId(BM),name:srcChild.name||"Imported Folder",color:srcChild.color||"",children:[],prompts:[]};target.children.push(dst);folders++}
+      mergeNode(dst,srcChild);
+    }
+  }
+  mergeNode(BM.folders,incoming.folders);
+  BM.collections=BM.collections||[];
+  for(const src of(incoming.collections||[])){
+    let dst=BM.collections.find(c=>(c.name||"").trim().toLowerCase()===(src.name||"").trim().toLowerCase());
+    if(!dst){dst={id:newCollId(),name:src.name||"Imported Collection",color:src.color||"",items:[]};BM.collections.push(dst)}
+    dst.items=[...new Set([...(dst.items||[]),...(src.items||[]).map(id=>idMap.get(id)).filter(Boolean)])];
+  }
+  return{added,skipped,folders};
+}
+async function pvBookmarkSafetySnapshot(mode,fileName){
+  pushUndo();
+  const snap={_format:"prompt-vault-bookmarks-safety",_version:1,createdAt:new Date().toISOString(),mode,fileName:fileName||"",bookmarks:deepClone(BM)};
+  await chrome.storage.local.set({[PV_BOOKMARKS_SAFETY_KEY]:snap});
+  meta.bookmarksSafetySnapshotAt=Date.now();meta.bookmarksSafetySnapshotMode=mode;chrome.storage.local.set({[MK]:meta});
+}
+async function pvRestoreBookmarkSafetySnapshot(){
+  const res=await chrome.storage.local.get([PV_BOOKMARKS_SAFETY_KEY]),snap=res[PV_BOOKMARKS_SAFETY_KEY];
+  if(!snap?.bookmarks){flash("No bookmarks safety snapshot found");return}
+  pushUndo();BM=pvPrepareBookmarkStore(snap.bookmarks);sanitizeBookmarkUiState();save();closeModal();aTab="bookmarks";bSt.sel="broot";bSt.exp={broot:1};flash("Bookmarks safety snapshot restored");render();
+}
+function showBookmarksRestoreFromParsed(payload,fileName){
+    let store;
+    try{store=pvPrepareBookmarkStore(pvBookmarksFromPayload(payload))}catch(e){flash("Bookmark backup not recognized: "+e.message);return}
+    const cur=pvBookmarkSummary(BM),inc=pvBookmarkSummary(store);
+    showModal(`<h3>Restore / Import Bookmarks Backup</h3><p style="font-size:10px;color:var(--mu)">${esc(fileName||"selected backup")}</p>
+      <div class="rc-diff"><div class="rc-diff-row rc-diff-h"><span></span><span>Current</span><span>Backup</span><span></span></div><div class="rc-diff-row"><span>Bookmarks</span><span>${cur.items}</span><span>${inc.items}</span><span></span></div><div class="rc-diff-row"><span>Folders</span><span>${cur.folders}</span><span>${inc.folders}</span><span></span></div><div class="rc-diff-row"><span>Collections</span><span>${cur.collections}</span><span>${inc.collections}</span><span></span></div></div>
+      <p style="font-size:9px;color:var(--dm)"><strong>Merge</strong> adds folders/bookmarks and skips duplicate URLs; existing bookmarks remain. <strong>Replace</strong> restores the backup's bookmark tree, collections, and panels. Both create a durable safety snapshot plus normal Undo before changing anything.</p>
+      <div class="brow"><button class="bg-btn" id="bmrX">Cancel</button>${meta.bookmarksSafetySnapshotAt?`<button class="bs" id="bmrSafety" title="Restore Bookmarks to the state before the last Merge/Replace">Restore Safety Snapshot</button>`:""}<button class="bs" id="bmrMerge">Merge into Bookmarks</button><button class="bdn" id="bmrReplace">Replace Bookmarks</button></div>`,mc=>{
+      mc.querySelector("#bmrX").addEventListener("click",closeModal);
+      mc.querySelector("#bmrSafety")?.addEventListener("click",pvRestoreBookmarkSafetySnapshot);
+      mc.querySelector("#bmrMerge").addEventListener("click",async()=>{await pvBookmarkSafetySnapshot("merge",fileName);const result=pvMergeBookmarkStore(store);save();closeModal();aTab="bookmarks";bSt.sel="broot";flash(`Merged ${result.added} bookmarks · ${result.skipped} duplicates skipped`);render()});
+      mc.querySelector("#bmrReplace").addEventListener("click",()=>showModal(`<h3 style="color:var(--dn)">Replace all Bookmarks?</h3><p>Only the Bookmarks section will be replaced. Prompts, Clips, Notes, Skills, Photos, and other sections stay unchanged.</p><div class="brow"><button class="bg-btn" id="bmrRX">Cancel</button><button class="bdn" id="bmrRY">Replace Bookmarks</button></div>`,mx=>{mx.querySelector("#bmrRX").addEventListener("click",closeModal);mx.querySelector("#bmrRY").addEventListener("click",async()=>{await pvBookmarkSafetySnapshot("replace",fileName);BM=store;sanitizeBookmarkUiState();save();closeModal();aTab="bookmarks";bSt.sel="broot";bSt.exp={broot:1};flash(`Restored ${inc.items} bookmarks from backup`);render()})}));
+    });
+}
+function openBookmarksBackupImport(){
+  const input=document.createElement("input");input.type="file";input.accept=".json,application/json";
+  input.addEventListener("change",async()=>{
+    const file=input.files?.[0];if(!file)return;
+    try{const text=await file.text();const payload=typeof pvParseLenientJson==="function"?pvParseLenientJson(text):JSON.parse(text);showBookmarksRestoreFromParsed(payload,file.name)}
+    catch(e){flash("Bookmark backup not recognized: "+e.message)}
+  });
+  input.click();
+}
+
 // ═══════ FEATURE: SMART IMPORT WIZARD ═══════
 
 // ── Format parsers — each returns {format:string, items:[{title,content,tags?,description?,url?,platform?}]} ──
+
+// Import only configuration the user explicitly supplies. This intentionally does
+// not reach into a ChatGPT account or browser session. There is no credential,
+// cookie, or private-page discovery path in Prompt Vault.
+function pvCustomGptConfigItems(value){
+  const wrappers=["customgpts","custom_gpts","customGPTs","gpts"];
+  let rows=value;
+  if(value&&!Array.isArray(value)&&typeof value==="object"){
+    const wrapped=wrappers.map(k=>value[k]).find(Array.isArray);
+    if(wrapped)rows=wrapped;
+    else if(Array.isArray(value.items)&&value.items.some(p=>p?.instructions||p?.conversation_starters||p?.capabilities))rows=value.items;
+    else rows=[value];
+  }
+  if(!Array.isArray(rows))return[];
+  return rows.filter(p=>p&&typeof p==="object"&&(p.instructions||p.conversation_starters||p.conversationStarters||p.capabilities||p.actions||p.knowledge_files||p.knowledgeFiles||p.gizmo?.instructions)).map((p,i)=>{
+    const g=p.gizmo&&typeof p.gizmo==="object"?{...p,...p.gizmo}:p;
+    const instructions=g.instructions||g.prompt||g.system_prompt||g.systemPrompt||"";
+    const starters=g.conversation_starters||g.conversationStarters||g.prompt_starters||[];
+    const capabilities=g.capabilities||g.tools||null;
+    const actions=g.actions||g.action_schemas||g.actionSchemas||null;
+    const knowledge=g.knowledge_files||g.knowledgeFiles||g.files||null;
+    const sections=[];
+    if(instructions)sections.push(String(instructions));
+    if(Array.isArray(starters)&&starters.length)sections.push("## Conversation starters\n"+starters.map(x=>"- "+String(typeof x==="string"?x:(x?.text||x?.prompt||JSON.stringify(x)))).join("\n"));
+    if(capabilities)sections.push("## Capabilities\n```json\n"+JSON.stringify(capabilities,null,2)+"\n```");
+    if(actions)sections.push("## Actions\n```json\n"+JSON.stringify(actions,null,2)+"\n```");
+    if(knowledge)sections.push("## Knowledge files\n```json\n"+JSON.stringify(knowledge,null,2)+"\n```");
+    return{title:g.name||g.title||g.display_name||`Custom GPT ${i+1}`,content:sections.join("\n\n"),description:g.description||g.short_description||"",url:g.url||g.share_url||g.shareUrl||"",tags:["custom-gpt-import"],_store:"customgpts",_sourceKind:"user-supplied-config"};
+  });
+}
 
 function parseImportFile(text,fileName){
   const ext=(fileName||"").split(".").pop().toLowerCase();
@@ -9384,6 +9819,10 @@ function parseImportFile(text,fileName){
       const j=typeof pvParseLenientJson==="function"?pvParseLenientJson(text):JSON.parse(text);
       // Prompt Vault full backup (has .prompts.folders structure)
       const valid=d=>(d&&d.folders&&typeof d.folders.id==="string");
+      const bookmarkStore=pvBookmarksFromPayload(j);
+      if(bookmarkStore&&(j?._format===PV_BOOKMARKS_FORMAT||valid(j)||(!j.prompts&&!j.snippets&&valid(j.bookmarks)))){
+        return{format:"Prompt Vault Bookmarks Backup",isBookmarksBackup:true,data:j,items:extractPVItems({bookmarks:bookmarkStore})}
+      }
       if(j.prompts&&j.snippets&&valid(j.prompts)){
         return{format:"Prompt Vault Backup",isFullBackup:true,data:j,items:extractPVItems(j)}
       }
@@ -9392,6 +9831,8 @@ function parseImportFile(text,fileName){
         const items=Object.values(j.items).map(i=>({title:i.title,content:i.content||"",tags:i.tags||[],description:i.description||"",url:i.url||"",platform:i.platform||"",sourceUrl:i.sourceUrl||"",_store:i.store||"prompts",_id:i.id}));
         return{format:"Prompt Vault Archive",items}
       }
+      const customGptItems=pvCustomGptConfigItems(j);
+      if(customGptItems.length)return{format:"Custom GPT configuration",items:customGptItems};
       // TypingMind format: {prompts:[{name,content,description}]}
       if(j.prompts&&Array.isArray(j.prompts)&&j.prompts[0]?.name){
         const items=j.prompts.map(p=>({title:p.name||p.title||"Untitled",content:p.content||p.prompt||"",tags:p.tags||[],description:p.description||""}));
@@ -9411,7 +9852,8 @@ function parseImportFile(text,fileName){
       // gets folders, update-by-id, version history, no-delete, and a preview.
       if(typeof pvJsonPromptArray==="function"&&typeof pvJsonPromptToSheetItem==="function"){
         const arr=pvJsonPromptArray(j);
-        if(arr){
+        const explicitlyRouted=arr&&arr.some(p=>p&&(p._store||p.store||p.silo||p.section||p.type));
+        if(arr&&!explicitlyRouted){
           const items=arr.map((p,i)=>pvJsonPromptToSheetItem(p,i)).filter(x=>x.title||x.content||x._id);
           if(items.length)return{format:"Prompt Vault JSON ("+items.length+" prompt"+(items.length!==1?"s":"")+")",isPromptSheet:true,items};
         }
@@ -9423,7 +9865,7 @@ function parseImportFile(text,fileName){
           const content=p.content||p.prompt||p.text||p.body||p.template||"";
           const tags=p.tags||p.categories||(p.category?[p.category]:[])||[];
           const desc=p.description||p.desc||p.summary||"";
-          return{title,content,tags:Array.isArray(tags)?tags:typeof tags==="string"?tags.split(",").map(t=>t.trim()):[],description:desc,url:p.url||"",platform:p.platform||""}
+          return{title,content,tags:Array.isArray(tags)?tags:typeof tags==="string"?tags.split(",").map(t=>t.trim()):[],description:desc,url:p.url||"",platform:p.platform||"",folder:p.folder||p.folderPath||p.folder_path||p.destination||"",_store:p._store||p.store||p.silo||p.section||p.type||""}
         }).filter(i=>i.title||i.content);
         return{format:"JSON Collection",items}
       }
@@ -9450,6 +9892,9 @@ function parseImportFile(text,fileName){
     const contentCol=headers.findIndex(h=>/^(content|prompt|text|body|template|description)$/i.test(h));
     const tagCol=headers.findIndex(h=>/^(tags|categories|category)$/i.test(h));
     const descCol=headers.findIndex(h=>/^(description|desc|summary|notes)$/i.test(h));
+    const folderCol=headers.findIndex(h=>/^(folder|folder_path|destination|path)$/i.test(h));
+    const siloCol=headers.findIndex(h=>/^(silo|section|store|type)$/i.test(h));
+    const urlCol=headers.findIndex(h=>/^(url|link|source_url)$/i.test(h));
     if(titleCol<0&&contentCol<0)return{format:"CSV (no recognized columns)",items:[]};
     const items=[];
     for(let i=1;i<records.length;i++){
@@ -9459,7 +9904,7 @@ function parseImportFile(text,fileName){
       const content=cols[contentCol]||cols[titleCol]||"";
       const tags=tagCol>=0&&cols[tagCol]?cols[tagCol].split(/[,;]/).map(t=>t.trim()).filter(Boolean):[];
       const desc=descCol>=0?cols[descCol]||"":"";
-      if(title||content)items.push({title,content,tags,description:desc});
+      if(title||content)items.push({title,content,tags,description:desc,folder:folderCol>=0?cols[folderCol]||"":"",_store:siloCol>=0?normalizeImportStore(cols[siloCol]):"",url:urlCol>=0?cols[urlCol]||"":""});
     }
     return{format:"CSV ("+items.length+" rows)",items}
   }
@@ -9505,7 +9950,7 @@ function parseCSVRow(line,sep){
 // Extract items from a Prompt Vault backup for preview
 function extractPVItems(j){
   const items=[];
-  const harvest=(data,store)=>{if(data?.folders)allItems(data.folders).forEach(p=>items.push({title:p.title,content:p.content||"",tags:p.tags||[],description:p.description||"",url:p.url||"",platform:p.platform||"",_store:store,_id:p.id}))};
+  const harvest=(data,store)=>{if(data?.folders)allItems(data.folders).forEach(p=>items.push({title:p.title,content:p.content||"",tags:p.tags||[],description:p.description||"",url:p.url||"",platform:p.platform||"",folder:p.folderPath||p.folderName||"",_store:store,_id:p.id}))};
   if(j.prompts)harvest(j.prompts,"prompts");
   if(j.imgprompts)harvest(j.imgprompts,"imgprompts");
   if(j.skills)harvest(j.skills,"skills");
@@ -9516,16 +9961,33 @@ function extractPVItems(j){
   return items;
 }
 
-// ── Ensure Import Inbox folder exists ──
-function ensureImportInbox(){
-  if(!P.folders.children.find(c=>c.id==="p_imports")){
-    P.folders.children.push({id:"p_imports",name:"📥 Imports",children:[],prompts:[],color:""});
-  }
-  return findFolder(P.folders,"p_imports");
+const PV_IMPORT_STORES={prompts:()=>P,snippets:()=>SN,bookmarks:()=>BM,skills:()=>KL,customgpts:()=>GP};
+const PV_IMPORT_ROOTS={prompts:"root",snippets:"sroot",bookmarks:"broot",skills:"kroot",customgpts:"groot"};
+const PV_IMPORT_LABELS={prompts:"Prompts",snippets:"Clips",bookmarks:"Bookmarks",skills:"Skills",customgpts:"Custom GPTs"};
+function normalizeImportStore(value,fallback="prompts"){
+  const v=String(value||"").trim().toLowerCase();
+  if(["clip","clips","snippet","snippets"].includes(v))return"snippets";
+  if(["bookmark","bookmarks","mark","marks"].includes(v))return"bookmarks";
+  if(["skill","skills","claude-skill","claude-skills"].includes(v))return"skills";
+  if(["gpt","gpts","customgpt","custom-gpt","custom gpt","customgpts","custom gpts"].includes(v))return"customgpts";
+  if(["prompt","prompts"].includes(v))return"prompts";
+  return fallback;
+}
+function pvImportFolder(store,pathText){
+  const root=store.folders,parts=String(pathText||"").split(/[\\/]+/).map(x=>x.trim()).filter(Boolean).filter((x,i)=>!(i===0&&(x.toLowerCase()===String(root.name||"").toLowerCase()||x.toLowerCase()==="root")));
+  let cur=root;
+  for(const name of parts){let next=(cur.children||[]).find(ch=>(ch.name||"").trim().toLowerCase()===name.toLowerCase());if(!next){next={id:generateId(store),name,children:[],prompts:[],color:""};cur.children=cur.children||[];cur.children.push(next)}cur=next}
+  return cur;
+}
+function pvImportDefaultFolder(storeKey){
+  const states={prompts:pSt,snippets:sSt,bookmarks:bSt,skills:kSt,customgpts:gSt};
+  const state=states[storeKey]||pSt,store=PV_IMPORT_STORES[storeKey]?.();
+  const selected=store&&findFolder(store.folders,state?.sel);if(!selected||selected.id===PV_IMPORT_ROOTS[storeKey])return"";
+  const parts=[];let cur=selected;while(cur&&cur.id!==PV_IMPORT_ROOTS[storeKey]){parts.unshift(cur.name);cur=findParent(store.folders,cur.id)}return parts.join(" / ");
 }
 
 // ── Import Wizard UI ──
-function importParsedText(text,fileName){
+function importParsedText(text,fileName,options={}){
   // PV drop format (front-matter markdown from agents) — additive, self-routing
   if(typeof pvDropImport==="function"&&pvDropImport(text,fileName))return true;
   // Batch template takes priority — it self-routes each record to its silo
@@ -9537,10 +9999,11 @@ function importParsedText(text,fileName){
   if(parsed.error){flash(parsed.error);return false}
   if(!parsed.items||!parsed.items.length){flash("No importable items found");return false}
   if(parsed.isPromptSheet){showPromptSheetPreview(parsed,fileName||"pasted CSV");return true}
-  showImportPreview([{file:fileName||"pasted",format:parsed.format,items:parsed.items,isFullBackup:parsed.isFullBackup||false,data:parsed.data||null}],parsed.items.length);
+  if(parsed.isBookmarksBackup&&options.store==="bookmarks"){showBookmarksRestoreFromParsed(parsed.data,fileName||"pasted backup");return true}
+  showImportPreview([{file:fileName||"pasted",format:parsed.format,items:parsed.items,isFullBackup:parsed.isFullBackup||false,data:parsed.data||null}],parsed.items.length,options);
   return true;
 }
-function importPickFiles(){
+function importPickFiles(options={}){
   const input=document.createElement("input");
   input.type="file";input.accept=".json,.md,.csv,.tsv,.txt,.yaml,.yml";input.multiple=true;
   input.addEventListener("change",async()=>{
@@ -9549,7 +10012,9 @@ function importPickFiles(){
     if(fileList.length===1){
       const text=await fileList[0].text();
       if(typeof isBatchTemplate==="function"&&isBatchTemplate(text)){showBatchPreview(parseBatchTemplate(text));return}
-      importParsedText(text,fileList[0].name);return;
+      const parsed=parseImportFile(text,fileList[0].name);
+      if(parsed.isBookmarksBackup&&options.store==="bookmarks"){showBookmarksRestoreFromParsed(parsed.data,fileList[0].name);return}
+      importParsedText(text,fileList[0].name,options);return;
     }
     // PV drop files carry their own silo routing — when every selected file is
     // PV, combine them into one PV preview; when mixed, ask for separate runs.
@@ -9572,7 +10037,7 @@ function importPickFiles(){
     }
     const totalItems=allParsed.reduce((s,p)=>s+p.items.length,0);
     if(!totalItems){flash("No importable items found");return}
-    showImportPreview(allParsed,totalItems);
+    showImportPreview(allParsed,totalItems,options);
   });
   input.click();
 }
@@ -9593,10 +10058,10 @@ function openImportWizard(){
     <div class="exp-opt" id="iwTplCp"><div class="eo-t">${I.copy} Copy blank template</div><div class="eo-d">Same template, to your clipboard</div></div>
     <div class="brow"><button class="bg-btn" id="iwX">Cancel</button></div>`,mc=>{
     mc.querySelector("#iwX").addEventListener("click",closeModal);
-    mc.querySelector("#iwFiles").addEventListener("click",()=>{closeModal();importPickFiles()});
+    mc.querySelector("#iwFiles").addEventListener("click",()=>{const store=PV_IMPORT_STORES[aTab]?aTab:"prompts";closeModal();importPickFiles({store,folder:pvImportDefaultFolder(store)})});
     mc.querySelector("#iwPaste").addEventListener("click",async()=>{
       closeModal();
-      try{const text=await navigator.clipboard.readText();if(!text||!text.trim()){flash("Clipboard is empty");return}importParsedText(text,"")}
+      try{const text=await navigator.clipboard.readText();if(!text||!text.trim()){flash("Clipboard is empty");return}const store=PV_IMPORT_STORES[aTab]?aTab:"prompts";importParsedText(text,"",{store,folder:pvImportDefaultFolder(store)})}
       catch{flash("Cannot read clipboard")}
     });
     mc.querySelector("#iwSheetOut").addEventListener("click",()=>{closeModal();pvDownloadPromptSheet(false)});
@@ -9634,17 +10099,35 @@ function showPromptSheetPreview(parsed,fileName){
   });
 }
 
-function showImportPreview(parsed,totalItems){
+function pvFindExactImportDuplicate(folder,item,storeKey){
+  const title=String(item.title||"").trim().toLowerCase(),url=String(item.url||"").trim().replace(/\/$/,"").toLowerCase();
+  return(folder?.prompts||[]).find(p=>title&&String(p.title||"").trim().toLowerCase()===title||(storeKey==="customgpts"&&url&&String(p.url||"").trim().replace(/\/$/,"").toLowerCase()===url))||null;
+}
+function pvUniqueImportTitle(folder,title){
+  const base=String(title||"Untitled").trim()||"Untitled",taken=new Set((folder?.prompts||[]).map(p=>String(p.title||"").trim().toLowerCase()));
+  if(!taken.has(base.toLowerCase()))return base;let n=2;while(taken.has(`${base} (imported ${n})`.toLowerCase()))n++;return`${base} (imported ${n})`;
+}
+function pvUpdateImportedItem(target,item,storeKey){
+  target.versions=target.versions||[];target.versions.push({title:target.title,content:target.content||"",tags:[...(target.tags||[])],files:target.files?deepClone(target.files):undefined,saved:Date.now(),note:"Before authorized import update"});
+  if(target.versions.length>20)target.versions=target.versions.slice(-20);
+  target.title=item.title||target.title;target.content=item.content||target.content||"";target.description=item.description||target.description||"";target.url=item.url||target.url||"";
+  target.tags=[...new Set([...(target.tags||[]),...(item.tags||[])])];target.modified=Date.now();if(storeKey==="skills")target.files={...(target.files||{}),...(item.files||{})};
+  target.provenance={source:"user-authorized-import",sourceFile:item._sourceFile||"",sourceKind:item._sourceKind||"user-supplied",importedAt:Date.now()};
+}
+
+function showImportPreview(parsed,totalItems,options={}){
   const isFullBackup=parsed.length===1&&parsed[0].isFullBackup;
   const storeIcons={prompts:"⚡",imgprompts:"🖼",skills:"🛠",snippets:"📋",bookmarks:"🔖",notes:"📝",customgpts:"🤖"};
+  const defaultStore=normalizeImportStore(options.store,"prompts"),defaultFolder=options.folder||"";
+  const storeOptions=Object.entries(PV_IMPORT_LABELS).map(([k,v])=>`<option value="${k}">${v}</option>`).join("");
   // Flatten all items with source info
   const flatItems=[];
-  parsed.forEach(p=>{p.items.forEach((item,i)=>{flatItems.push({...item,_fileIdx:parsed.indexOf(p),_idx:i,_checked:true})})});
+  parsed.forEach((p,fileIdx)=>{p.items.forEach((item,i)=>{flatItems.push({...item,_fileIdx:fileIdx,_idx:i,_checked:true,_destStore:normalizeImportStore(item._store,defaultStore),_destFolder:item.folder||defaultFolder})})});
 
   let h=`<h3>Import Wizard</h3>`;
   // Format detection summary
-  parsed.forEach(p=>{
-    h+=`<div style="font-size:10px;color:var(--mu);margin-bottom:2px">📄 ${esc(p.file)} → <strong>${esc(p.format)}</strong> · ${p.items.length} item${p.items.length!==1?'s':''}</div>`;
+  parsed.forEach((p,fileIdx)=>{
+    h+=`<div style="font-size:10px;color:var(--mu);margin-bottom:4px;display:flex;gap:5px;align-items:center"><span style="flex:1">📄 ${esc(p.file)} → <strong>${esc(p.format)}</strong> · ${p.items.length} item${p.items.length!==1?'s':''}</span><select data-iw-file-store="${fileIdx}" title="Set destination section for every row in this file">${storeOptions}</select><input data-iw-file-folder="${fileIdx}" value="${escAttr(defaultFolder)}" placeholder="Folder path (all rows)" title="Set folder path for every row in this file" style="width:125px"></div>`;
   });
 
   if(isFullBackup){
@@ -9663,21 +10146,26 @@ function showImportPreview(parsed,totalItems){
 
   h+=`<div id="iwList" style="max-height:280px;overflow-y:auto">`;
   flatItems.forEach((item,i)=>{
-    const storeIcon=storeIcons[item._store]||"⚡";
+    const storeIcon=storeIcons[item._destStore]||"⚡";
     const preview=(item.content||"").slice(0,80).replace(/\n/g," ");
     h+=`<div class="iw-row" data-iwi="${i}">`;
     h+=`<label class="iw-cb"><input type="checkbox" checked data-iwc="${i}"></label>`;
-    h+=`<div class="iw-info"><div class="iw-title">${item._store?storeIcon+' ':''}${esc(item.title)}</div>`;
+    h+=`<div class="iw-info"><div class="iw-title">${storeIcon} ${esc(item.title)}</div>`;
     h+=`<div class="iw-meta">${preview?esc(preview):'(empty)'}${item.tags?.length?' · '+item.tags.slice(0,3).map(t=>esc(t)).join(', '):''}</div>`;
-    h+=`</div></div>`;
+    h+=`<div style="display:flex;gap:4px;margin-top:3px"><select data-iws="${i}" aria-label="Destination section">${storeOptions}</select><input data-iwf="${i}" value="${escAttr(item._destFolder)}" placeholder="Folder / Subfolder" aria-label="Destination folder" style="flex:1;min-width:100px"></div></div></div>`;
   });
   h+=`</div>`;
 
-  h+=`<div style="margin-top:6px;font-size:9px;color:var(--dm)">Selected items will be imported to 📥 Imports folder. You can organize them from there.</div>`;
+  h+=`<div style="margin-top:6px;font-size:9px;color:var(--dm)">Choose a section and optional folder path for each file or row. Blank folder paths use that section's root. Nothing is forced into Prompts › Imports.</div>`;
+  h+=`<div style="margin-top:6px;display:flex;gap:6px;align-items:center;font-size:9px;color:var(--mu)"><label for="iwDupMode">Exact duplicates:</label><select id="iwDupMode"><option value="skip">Skip existing (recommended)</option><option value="update">Update existing + version</option><option value="keep">Keep both</option></select></div>`;
   h+=`<div class="brow" style="margin-top:8px"><button class="bg-btn" id="iwX">Cancel</button><button class="bp" id="iwGo">Import Selected</button></div>`;
 
   showModal(h,mc=>{
     mc.querySelector("#iwX").addEventListener("click",closeModal);
+    flatItems.forEach((item,i)=>{const s=mc.querySelector(`[data-iws="${i}"]`);if(s)s.value=item._destStore});
+    parsed.forEach((p,fileIdx)=>{const s=mc.querySelector(`[data-iw-file-store="${fileIdx}"]`);if(s)s.value=defaultStore});
+    mc.querySelectorAll("[data-iw-file-store]").forEach(el=>el.addEventListener("change",()=>{mc.querySelectorAll(`[data-iws]`).forEach(row=>{const i=+row.dataset.iws;if(flatItems[i]._fileIdx===+el.dataset.iwFileStore)row.value=el.value})}));
+    mc.querySelectorAll("[data-iw-file-folder]").forEach(el=>el.addEventListener("input",()=>{mc.querySelectorAll(`[data-iwf]`).forEach(row=>{const i=+row.dataset.iwf;if(flatItems[i]._fileIdx===+el.dataset.iwFileFolder)row.value=el.value})}));
 
     // Full restore option
     mc.querySelector("#iwFullRestore")?.addEventListener("click",()=>{
@@ -9730,23 +10218,29 @@ function showImportPreview(parsed,totalItems){
 
     function runImport(selected){
       pushUndo();
-      const inbox=ensureImportInbox();
-      let imported=0;
+      let imported=0,skipped=0,updated=0;const byStore={},duplicateMode=mc.querySelector("#iwDupMode")?.value||"skip";
       selected.forEach(i=>{
         const item=flatItems[i];if(!item)return;
-        inbox.prompts.push({
-          id:generateId(P),title:item.title||"Untitled",content:item.content||"",
+        const storeKey=normalizeImportStore(mc.querySelector(`[data-iws="${i}"]`)?.value,defaultStore),store=PV_IMPORT_STORES[storeKey]?.();if(!store)return;
+        const folder=pvImportFolder(store,mc.querySelector(`[data-iwf="${i}"]`)?.value||"");folder.prompts=folder.prompts||[];
+        const duplicate=pvFindExactImportDuplicate(folder,item,storeKey);
+        if(duplicate&&duplicateMode==="skip"){skipped++;return}
+        if(duplicate&&duplicateMode==="update"){pvUpdateImportedItem(duplicate,item,storeKey);updated++;byStore[storeKey]=(byStore[storeKey]||0)+1;return}
+        const created={
+          id:generateId(store),title:duplicate?pvUniqueImportTitle(folder,item.title):item.title||"Untitled",content:item.content||"",
           tags:item.tags||[],created:Date.now(),modified:Date.now(),
           usageCount:0,favorited:false,versions:[],
           url:item.url||"",platform:item.platform||"",
           description:item.description||"",
-          sourceUrl:item.sourceUrl||"",sourceTitle:item.sourceTitle||""
-        });
-        imported++;
+          sourceUrl:item.sourceUrl||"",sourceTitle:item.sourceTitle||"",
+          provenance:{source:"user-authorized-import",sourceFile:item._sourceFile||"",sourceKind:item._sourceKind||"user-supplied",importedAt:Date.now()}
+        };
+        if(storeKey==="skills")created.files=deepClone(item.files||{});
+        folder.prompts.push(created);
+        imported++;byStore[storeKey]=(byStore[storeKey]||0)+1;
       });
       save();closeModal();
-      pSt.sel="p_imports";pSt.exp.p_imports=1;pSt.exp.root=1;
-      aTab="prompts";flash(`✓ Imported ${imported} items to 📥 Imports`);render();
+      const parts=Object.entries(byStore).map(([s,n])=>`${n} ${PV_IMPORT_LABELS[s]}`).join(", ");aTab=Object.keys(byStore)[0]||defaultStore;flash(`Imported ${imported}${updated?` · ${updated} updated`:""}${skipped?` · ${skipped} duplicates skipped`:""}${parts?` · ${parts}`:""}`);render();
     }
 
     mc.querySelector("#iwGo").addEventListener("click",()=>{
@@ -9756,6 +10250,7 @@ function showImportPreview(parsed,totalItems){
       const similarWarn=[];
       selected.forEach(i=>{
         const item=flatItems[i];if(!item)return;
+        const storeKey=normalizeImportStore(mc.querySelector(`[data-iws="${i}"]`)?.value,defaultStore);if(storeKey!=="prompts")return;
         const txt=((item.title||"")+" "+(item.content||"")).trim();
         if(txt.length<20)return;
         const sim=findSimilarPrompts(txt,P,null,0.85);
@@ -10382,17 +10877,19 @@ function pvCcKey(c){return (c&&c._custom&&c.key)?c.key:(((c&&c._group)||"")+"|"+
 function pvCcCfg(){return (typeof cfg!=="undefined"&&cfg)?cfg:null}
 function pvCcCustomList(){const k=pvCcCfg();if(!k)return[];k.ccCustom=Array.isArray(k.ccCustom)?k.ccCustom:[];return k.ccCustom}
 function pvCcFavs(){const k=pvCcCfg();if(!k)return[];k.ccFav=Array.isArray(k.ccFav)?k.ccFav:[];return k.ccFav}
-function pvCcFolders(){const k=pvCcCfg();if(!k)return[];k.ccFolders=Array.isArray(k.ccFolders)?k.ccFolders:[];return k.ccFolders}
+function pvCcFolders(){const k=pvCcCfg();if(!k)return[];k.ccFolders=Array.isArray(k.ccFolders)?k.ccFolders:[];k.ccFolders.forEach(f=>{f.parentId=typeof f.parentId==="string"?f.parentId:"";f.kind=f.kind==="playlist"?"playlist":"folder";f.items=Array.isArray(f.items)?f.items:[]});return k.ccFolders}
 function pvCcIsFav(key){return pvCcFavs().includes(key)}
 function pvCcToggleFav(key){
   const f=pvCcFavs(),i=f.indexOf(key);
   if(i>=0)f.splice(i,1);else f.push(key);
   save();return i<0;
 }
-function pvCcNewFolder(name){
-  const f={id:"ccf_"+Date.now().toString(36)+"_"+pvCcFolders().length,name:(name||"").trim()||"Folder",color:"",items:[]};
+function pvCcNewFolder(name,parentId="",kind="folder"){
+  const f={id:"ccf_"+Date.now().toString(36)+"_"+pvCcFolders().length,name:(name||"").trim()||(kind==="playlist"?"Playlist":"Folder"),parentId:parentId||"",kind:kind==="playlist"?"playlist":"folder",color:"",items:[]};
   pvCcFolders().push(f);save();return f;
 }
+function pvCcChildren(parentId=""){return pvCcFolders().filter(f=>(f.parentId||"")===(parentId||""))}
+function pvCcDescendantIds(fid,set=new Set()){for(const f of pvCcChildren(fid)){set.add(f.id);pvCcDescendantIds(f.id,set)}return set}
 function pvCcFolderHas(fid,key){const f=pvCcFolders().find(x=>x.id===fid);return !!(f&&(f.items||[]).includes(key))}
 function pvCcFoldersOf(key){return pvCcFolders().filter(f=>(f.items||[]).includes(key))}
 // Membership is by key, so filing a command into a second folder neither copies nor moves it.
@@ -10407,7 +10904,15 @@ function pvCcSetFolders(key,ids){
 }
 function pvCcDeleteFolder(fid){
   const k=pvCcCfg();if(!k)return;
-  k.ccFolders=pvCcFolders().filter(f=>f.id!==fid);save();
+  const ids=pvCcDescendantIds(fid);ids.add(fid);k.ccFolders=pvCcFolders().filter(f=>!ids.has(f.id));save();
+}
+function pvCcMoveInFolder(fid,key,delta){
+  const f=pvCcFolders().find(x=>x.id===fid);if(!f||f.kind!=="playlist")return false;
+  const i=f.items.indexOf(key),to=Math.max(0,Math.min(f.items.length-1,i+delta));if(i<0||i===to)return false;
+  const [moved]=f.items.splice(i,1);f.items.splice(to,0,moved);save();return true;
+}
+function pvCcFolderTreeHtml(parentId="",depth=0,active=""){
+  return pvCcChildren(parentId).map(f=>`<div class="cc-tree-row${active===f.id?' active':''}" data-scope="${escAttr(f.id)}" data-cc-folder="${escAttr(f.id)}" style="padding-left:${5+depth*13}px"><span>${f.kind==="playlist"?'▶':'📁'}</span><span>${esc(f.name)}</span><span class="cc-tree-kind">${f.kind}</span><span class="cc-tree-count">${(f.items||[]).length}</span></div>${pvCcFolderTreeHtml(f.id,depth+1,active)}`).join("")
 }
 // A duplicate is an independent, editable command — the way to keep a tweaked variant of a
 // bundled one without losing the original.
@@ -10494,23 +10999,25 @@ function openClaudeCommandsFull(){
 // except nothing is copied: checking a second folder just adds another reference.
 function pvCcFoldersModal(c){
   const key=pvCcKey(c);
-  const rows=()=>pvCcFolders().map(f=>`<label class="fpi" style="display:flex;align-items:center;gap:7px;padding:4px 6px;cursor:pointer"><input type="checkbox" class="ccf-cb" value="${escAttr(f.id)}" ${pvCcFolderHas(f.id,key)?"checked":""} style="accent-color:var(--cc);flex-shrink:0"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f.name)}</span><span style="font-size:9px;color:var(--dm)">${(f.items||[]).length}</span></label>`).join("");
-  showModal(`<h3>Add to folders</h3>
+  const depthOf=f=>{let d=0,p=f;while(p?.parentId&&d<6){p=pvCcFolders().find(x=>x.id===p.parentId);d++}return d};
+  const rows=()=>pvCcFolders().map(f=>`<label class="fpi" style="display:flex;align-items:center;gap:7px;padding:4px 6px 4px ${6+depthOf(f)*12}px;cursor:pointer"><input type="checkbox" class="ccf-cb" value="${escAttr(f.id)}" ${pvCcFolderHas(f.id,key)?"checked":""} style="accent-color:var(--cc);flex-shrink:0"><span>${f.kind==="playlist"?'▶':'📁'}</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f.name)}</span><span style="font-size:9px;color:var(--dm)">${(f.items||[]).length}</span></label>`).join("");
+  showModal(`<h3>Add to folders & playlists</h3>
     <p style="font-size:10px;color:var(--dm)">“${esc(c.name)}” can sit in as many folders as you like — it is referenced, not copied, so editing or unfiling it in one place leaves the others alone.</p>
     <div class="fp" id="ccfList" style="max-height:230px;overflow-y:auto">${rows()||'<div class="cc-empty">No folders yet — make one below.</div>'}</div>
-    <div style="display:flex;gap:4px;margin-top:8px"><input type="text" id="ccfNew" placeholder="New folder name…" style="flex:1"><button class="bs" id="ccfAdd">+ Add</button></div>
+    <div style="display:flex;gap:4px;margin-top:8px"><input type="text" id="ccfNew" placeholder="New folder or playlist name…" style="flex:1"><button class="bs" id="ccfAdd">+ Folder</button><button class="bs" id="ccpAdd">+ Playlist</button></div>
     <div class="brow" style="margin-top:8px"><button class="bg-btn" id="ccfX">Cancel</button><button class="bp" id="ccfY">Save</button></div>`,mc=>{
-    const addFolder=()=>{
+    const addFolder=(kind="folder")=>{
       const inp=mc.querySelector("#ccfNew"),nm=(inp.value||"").trim();
       if(!nm)return;
       const checked=[...mc.querySelectorAll(".ccf-cb:checked")].map(x=>x.value);
-      const f=pvCcNewFolder(nm);checked.push(f.id);
+      const f=pvCcNewFolder(nm,"",kind);checked.push(f.id);
       inp.value="";
       mc.querySelector("#ccfList").innerHTML=rows();
       mc.querySelectorAll(".ccf-cb").forEach(cb=>{cb.checked=checked.includes(cb.value)});
     };
-    mc.querySelector("#ccfAdd").addEventListener("click",addFolder);
-    mc.querySelector("#ccfNew").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();addFolder()}});
+    mc.querySelector("#ccfAdd").addEventListener("click",()=>addFolder("folder"));
+    mc.querySelector("#ccpAdd").addEventListener("click",()=>addFolder("playlist"));
+    mc.querySelector("#ccfNew").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();addFolder("folder")}});
     mc.querySelector("#ccfX").addEventListener("click",closeModal);
     mc.querySelector("#ccfY").addEventListener("click",()=>{
       pvCcSetFolders(key,[...mc.querySelectorAll(".ccf-cb:checked")].map(x=>x.value));
@@ -10545,6 +11052,13 @@ function pvCcEditCustom(c){
 // Inline tab panel — Claude Commands lives in the main tab bar (aTab==="claudecmds"),
 // rendered full-width into #main. Search/scope/group state persists for the session.
 let _ccPanelSt={g:"",q:"",scope:"all"};
+function pvCcCreateContainerModal(kind="folder",parentId=""){
+  const label=kind==="playlist"?"playlist":"folder";
+  showModal(`<h3>New command ${label}</h3><input type="text" id="ccNfI" placeholder="${kind==="playlist"?'Playlist':'Folder'} name…" style="width:100%"><div class="brow"><button class="bg-btn" id="ccNfX">Cancel</button><button class="bp" id="ccNfY">Create</button></div>`,mc=>{
+    const go=()=>{const nm=(mc.querySelector("#ccNfI").value||"").trim();if(!nm)return;const f=pvCcNewFolder(nm,parentId,kind);closeModal();_ccPanelSt.scope=f.id;flash(kind==="playlist"?"Playlist created":"Folder created");render()};
+    mc.querySelector("#ccNfY").addEventListener("click",go);mc.querySelector("#ccNfI").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();go()}});mc.querySelector("#ccNfX").addEventListener("click",closeModal);mc.querySelector("#ccNfI").focus();
+  });
+}
 function renderClaudeCommands(){
   const m=$("main");if(!m)return;
   const flat=pvCcFlat(),groups=pvCcData().groups||[];
@@ -10563,16 +11077,18 @@ function renderClaudeCommands(){
   };
   const scopeChips=`<button class="cc-chip${st2.scope==="all"?" cc-chip-a":""}" data-scope="all">All <span class="cc-n">${flat.length}</span></button>`+
     `<button class="cc-chip${st2.scope==="fav"?" cc-chip-a":""}" data-scope="fav">${S.star} Favorites <span class="cc-n">${favs.length}</span></button>`+
-    folders.map(f=>`<button class="cc-chip${st2.scope===f.id?" cc-chip-a":""}" data-scope="${escAttr(f.id)}">${esc(f.name)} <span class="cc-n">${(f.items||[]).length}</span></button>`).join("")+
-    `<button class="cc-chip cc-chip-add" id="ccNewFolder" title="Create a folder">${I.plus||"+"} Folder</button>`;
+    `<button class="cc-chip cc-chip-add" id="ccNewFolder" title="Create a command folder">${I.plus||"+"} Folder</button><button class="cc-chip cc-chip-add" id="ccNewPlaylist" title="Create an ordered command playlist">${I.plus||"+"} Playlist</button>`;
   const chips=`<button class="cc-chip${st2.g?"":" cc-chip-a"}" data-g="">All groups</button>`+
     groups.map(g=>`<button class="cc-chip${st2.g===g.name?" cc-chip-a":""}" data-g="${escAttr(g.name)}">${g.icon} ${esc(g.name)} <span class="cc-n">${(g.commands||[]).length}</span></button>`).join("");
-  m.innerHTML=`<div class="cc-panel">
+  const activeContainer=folders.find(f=>f.id===st2.scope);
+  m.innerHTML=`<div class="cc-panel">${claudeToolsHeader("commands")}
     <div class="cc-panel-hd">
       <div class="cc-panel-top"><div class="cc-panel-ttl">⌨️ Claude Commands</div><div class="cc-panel-acts"><button class="bk-tb expand-btn" id="ccExpand" title="Open the full-screen reader">${S.expand} Expand</button><button class="bs" id="ccSaveAll" title="Add every command to Prompts › Claude Commands">${I.plus||"+"} Add all to vault</button></div></div>
       <div class="cc-sub">${flat.length} commands · click a row to copy + inject · ${S.star} to favorite, ⋯ to file or duplicate</div>
       <input type="text" id="ccSearch" placeholder="Search name, description, tag, group…" autocomplete="off" value="${escAttr(st2.q)}">
       <div class="cc-chips cc-scopes" id="ccScopes">${scopeChips}</div>
+      <div class="cc-tree" id="ccTree"><div class="cc-tree-row${st2.scope==="all"?' active':''}" data-scope="all"><span>⌨</span><span>All commands</span><span class="cc-tree-count">${flat.length}</span></div><div class="cc-tree-row${st2.scope==="fav"?' active':''}" data-scope="fav"><span>★</span><span>Favorites</span><span class="cc-tree-count">${favs.length}</span></div>${pvCcFolderTreeHtml("",0,st2.scope)||'<div class="cc-empty">No command folders yet.</div>'}</div>
+      ${activeContainer?.kind==="playlist"?`<div class="cc-playlist-acts"><button class="bs" id="ccCopyPlaylist">${I.copy} Copy playlist</button><span class="cc-sub">Ordered top to bottom · use ⋯ to move a command</span></div>`:""}
       <div class="cc-chips" id="ccChips">${chips}</div>
     </div>
     <div class="cc-scroll"><div id="ccList" class="cc-list cc-list-panel"></div></div>
@@ -10592,7 +11108,12 @@ function renderClaudeCommands(){
     return "No commands.";
   };
   const draw=()=>{
-    const rows=flat.filter(match);
+    let rows=flat.filter(match);
+    const scopeFolder=folders.find(f=>f.id===st2.scope);
+    if(scopeFolder?.kind==="playlist"){
+      const order=new Map((scopeFolder.items||[]).map((key,i)=>[key,i]));
+      rows=rows.slice().sort((a,b)=>(order.get(pvCcKey(a))??99999)-(order.get(pvCcKey(b))??99999));
+    }
     if(!rows.length){listEl.innerHTML=`<div class="cc-empty">${emptyMsg()}</div>`;return}
     const cap=rows.slice(0,600);
     listEl.innerHTML=cap.map(c=>{
@@ -10605,16 +11126,11 @@ function renderClaudeCommands(){
   };
   draw();
   m.querySelector("#ccSearch")?.addEventListener("input",e=>{st2.q=(e.target.value||"").toLowerCase().trim();draw()});
-  m.querySelectorAll("#ccScopes .cc-chip[data-scope]").forEach(ch=>ch.addEventListener("click",()=>{st2.scope=ch.dataset.scope;render()}));
-  m.querySelector("#ccNewFolder")?.addEventListener("click",()=>{
-    showModal(`<h3>New folder</h3><input type="text" id="ccNfI" placeholder="Folder name…" style="width:100%"><div class="brow"><button class="bg-btn" id="ccNfX">Cancel</button><button class="bp" id="ccNfY">Create</button></div>`,mc=>{
-      const go=()=>{const nm=(mc.querySelector("#ccNfI").value||"").trim();if(!nm)return;const f=pvCcNewFolder(nm);closeModal();st2.scope=f.id;flash("Folder created");render()};
-      mc.querySelector("#ccNfY").addEventListener("click",go);
-      mc.querySelector("#ccNfI").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();go()}});
-      mc.querySelector("#ccNfX").addEventListener("click",closeModal);
-      mc.querySelector("#ccNfI").focus();
-    });
-  });
+  wireClaudeToolsHeader(m);
+  m.querySelectorAll("#ccScopes [data-scope],#ccTree [data-scope]").forEach(ch=>ch.addEventListener("click",()=>{st2.scope=ch.dataset.scope;render()}));
+  m.querySelector("#ccNewFolder")?.addEventListener("click",()=>pvCcCreateContainerModal("folder"));
+  m.querySelector("#ccNewPlaylist")?.addEventListener("click",()=>pvCcCreateContainerModal("playlist"));
+  m.querySelector("#ccCopyPlaylist")?.addEventListener("click",()=>{const f=pvCcFolders().find(x=>x.id===st2.scope);if(!f)return;const byKey=new Map(flat.map(c=>[pvCcKey(c),c]));const text=(f.items||[]).map(k=>byKey.get(k)?.inject||"").filter(Boolean).join("\n\n");navigator.clipboard.writeText(text).then(()=>flash("Playlist copied in order")).catch(()=>flash("Copy failed"))});
   m.querySelectorAll("#ccChips .cc-chip").forEach(ch=>ch.addEventListener("click",()=>{
     st2.g=ch.dataset.g||"";
     m.querySelectorAll("#ccChips .cc-chip").forEach(x=>x.classList.toggle("cc-chip-a",x===ch));
@@ -10628,9 +11144,11 @@ function renderClaudeCommands(){
       const c=flat[+mo.dataset.i],k=pvCcKey(c),fav=pvCcIsFav(k);
       const items=[
         {a:"fav",l:fav?"Remove from favorites":"Add to favorites",ic:S.star,fn:()=>{pvCcToggleFav(k);render()}},
-        {a:"fold",l:"Add to folders…",fn:()=>pvCcFoldersModal(c)},
+        {a:"fold",l:"Add to folders & playlists…",fn:()=>pvCcFoldersModal(c)},
         {a:"dup",l:"Duplicate",ic:I.copy,fn:()=>{const d=pvCcDuplicate(c);if(d){flash("Duplicated — edit your copy");render()}}},
       ];
+      const activePlaylist=pvCcFolders().find(x=>x.id===st2.scope&&x.kind==="playlist");
+      if(activePlaylist&&pvCcFolderHas(activePlaylist.id,k))items.push({a:"up",l:"Move earlier in playlist",fn:()=>{pvCcMoveInFolder(activePlaylist.id,k,-1);render()}},{a:"down",l:"Move later in playlist",fn:()=>{pvCcMoveInFolder(activePlaylist.id,k,1);render()}});
       if(c._custom)items.push({sep:1},{a:"edit",l:"Edit…",ic:I.edit,fn:()=>pvCcEditCustom(c)},{a:"del",l:"Delete",ic:I.trash,cls:"dng",fn:()=>{pvCcDeleteCustom(k);flash("Deleted");render()}});
       items.push({sep:1},{a:"save",l:"Save to Prompts",ic:I.plus,fn:()=>pvCcSaveOne(c)});
       showContextMenuAt(mo,items);
@@ -10641,11 +11159,13 @@ function renderClaudeCommands(){
     const row=e.target.closest(".cc-row");
     if(row)pvCcUse(flat[+row.dataset.i]);
   });
-  // Right-click a folder chip to rename or remove it.
-  m.querySelectorAll("#ccScopes .cc-chip[data-scope]").forEach(ch=>{
+  // Right-click a tree node to add children, rename, or remove it.
+  m.querySelectorAll("#ccTree [data-cc-folder]").forEach(ch=>{
     const fid=ch.dataset.scope;
     if(fid==="all"||fid==="fav")return;
     ch.addEventListener("contextmenu",e=>showContextMenu(e,[
+      {a:"sub",l:"New subfolder…",ic:I.plus,fn:()=>pvCcCreateContainerModal("folder",fid)},
+      {a:"play",l:"New playlist here…",ic:I.plus,fn:()=>pvCcCreateContainerModal("playlist",fid)},
       {a:"rn",l:"Rename…",ic:I.edit,fn:()=>{
         const f=pvCcFolders().find(x=>x.id===fid);if(!f)return;
         showModal(`<h3>Rename folder</h3><input type="text" id="ccRnI" value="${escAttr(f.name)}" style="width:100%"><div class="brow"><button class="bg-btn" id="ccRnX">Cancel</button><button class="bp" id="ccRnY">Save</button></div>`,mc=>{
@@ -10656,7 +11176,7 @@ function renderClaudeCommands(){
           const i2=mc.querySelector("#ccRnI");i2.focus();i2.select();
         });
       }},
-      {a:"del",l:"Delete folder",ic:I.trash,cls:"dng",fn:()=>{pvCcDeleteFolder(fid);flash("Folder deleted");render()}},
+      {a:"del",l:"Delete folder / playlist",ic:I.trash,cls:"dng",fn:()=>{pvCcDeleteFolder(fid);flash("Command container deleted");render()}},
     ]));
   });
   m.querySelector("#ccExpand")?.addEventListener("click",openClaudeCommandsFull);
@@ -10721,7 +11241,7 @@ loadData().then(async ()=>{
   // Deep link: sidepanel.html?tab=photos (Photos expanded view) or any silo tab.
   try{
     const _bootTab=new URLSearchParams(location.search).get("tab");
-    if(_bootTab&&typeof _TDT!=="undefined"&&(_TDT[_bootTab]||_bootTab==="workspace"))aTab=_bootTab;
+    if(_bootTab&&typeof _TDT!=="undefined"&&(_TDT[_bootTab]||_bootTab==="workspace"||_bootTab==="lists"))aTab=_bootTab;
   }catch(e){/* deep link is best-effort */}
   validateAll();render();clearBackupBanner();_vsReady=true;
   if(typeof openTrustOnboarding==="function"&&shouldShowTrustOnboarding())setTimeout(()=>openTrustOnboarding(false),250);

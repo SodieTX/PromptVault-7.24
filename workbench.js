@@ -23,6 +23,11 @@ const $ = id => document.getElementById(id);
 function sget(keys) { return new Promise(r => chrome.storage.local.get(keys, r)); }
 function sset(obj)  { return new Promise(r => chrome.storage.local.set(obj, r)); }
 
+function exitWorkbench() {
+  if (history.length > 1) history.back();
+  else window.close();
+}
+
 function countItems(node) {
   let c = (node.prompts || []).length;
   (node.children || []).forEach(ch => c += countItems(ch));
@@ -195,6 +200,7 @@ window.pvWorkbench = {
 };
 
 function init() {
+  $("exit").addEventListener("click", exitWorkbench);
   const p = new URLSearchParams(location.search).get("scope");
   currentScope = validScope(p) ? p : "prompts";
   const sel = $("scope");

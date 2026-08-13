@@ -877,20 +877,19 @@
     }catch(_){/* tainted or missing */}
     return "";
   }
-  document.addEventListener("dragstart",e=>{
+  function captureDraggedVisual(target,path){
     try{
       // Inside a shadow root e.target is retargeted to the host, and these apps wrap the real
       // <img>/<video> in layers of overlay divs. Walk the composed path so we resolve the
       // innermost real visual rather than whatever wrapper the event surfaced.
       let src="";
-      const path=(typeof e.composedPath==="function"&&e.composedPath())||[];
       for(let i=0;i<path.length&&i<6;i++){
         const n=path[i];
         if(!(n&&n.nodeType===1))break;
         src=srcFromTarget(n);
         if(src)break;
       }
-      if(!src)src=srcFromTarget(e.target);
+      if(!src)src=srcFromTarget(target);
       if(!src)return;
       const ts=Date.now();
       // Stash the source URL IMMEDIATELY, before attempting to read bytes. Byte reading
@@ -905,7 +904,16 @@
       setTimeout(()=>{try{chrome.storage.local.get("pv_drag_image",r=>{if(r&&r.pv_drag_image&&r.pv_drag_image.ts===ts)chrome.storage.local.remove("pv_drag_image")})}catch(_){/* storage gone */}},20000);
       // Bytes are still worth having: blob:/canvas sources can ONLY be resolved in the page,
       // and real bytes survive auth walls. Upgrade the stash if they arrive.
-      readBytes(src,e.target).then(dataUrl=>{if(dataUrl)stash({dataUrl})}).catch(()=>{});
+      readBytes(src,target).then(dataUrl=>{if(dataUrl)stash({dataUrl})}).catch(()=>{});
     }catch(_){/* never break the page's own drag */}
-  },true);
+  }
+  document.addEventListener("dragstart",e=>{
+    // Observe in the bubble phase and defer every storage/fetch/canvas operation until the
+    // site's own dragstart handlers have finished. Prompt Vault must never change the event,
+    // its DataTransfer, or the timing-critical work a page uses to start native dragging.
+    if(e.defaultPrevented)return;
+    const target=e.target;
+    const path=(typeof e.composedPath==="function"&&e.composedPath())||[];
+    setTimeout(()=>captureDraggedVisual(target,path),0);
+  },{capture:false,passive:true});
 })();
