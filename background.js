@@ -7,7 +7,8 @@ importScripts(
   "bookmark-sync.js",
   "drive-shared.js",
   "drive-sync-bg.js",
-  "pv-bridge.js"
+  "pv-bridge.js",
+  "backup-guard.js"
 );
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 
@@ -69,13 +70,14 @@ function buildFolderMenus() {
   clearTimeout(menuBuildTimer);
   menuBuildTimer = setTimeout(() => { menuBuildPending = false; }, 5000);
   chrome.contextMenus.removeAll(() => {
-    chrome.storage.local.get(["pv_p", "pv_s", "pv_b", "pv_k", "pv_n", "pv_ph"], res => {
+    chrome.storage.local.get(["pv_p", "pv_s", "pv_b", "pv_k", "pv_n", "pv_ph", "pv_cfg"], res => {
       const P = res.pv_p;
       const SN = res.pv_s;
       const BM = res.pv_b;
       const KL = res.pv_k;
       const NT = res.pv_n;
       const PH = res.pv_ph;
+      const cfg = res.pv_cfg || {};
 
       // ── Inject menu (editable fields — prompts) ──
       chrome.contextMenus.create({ id: "inj-root", title: "\u26a1 Inject from Prompt Vault", contexts: ["editable"] });
@@ -182,6 +184,25 @@ function buildFolderMenus() {
         chrome.contextMenus.create({ id: "img-rsep", type: "separator", parentId: "img-root", contexts: ["all"] });
         for (const child of phRoot.children) {
           addFolderMenu(child, "img-root", "img", ["all"]);
+        }
+      }
+
+      // User-curated shortcuts: only marked Clips, Notes, and Photos folders are
+      // repeated here, so users can save directly without traversing a tree.
+      const quickRefs = Array.isArray(cfg.quickAccessFolders) ? cfg.quickAccessFolders : [];
+      const quickResolved = [];
+      for (const ref of quickRefs) {
+        const root = ref?.silo === "snippets" ? SN?.folders : ref?.silo === "notes" ? NT?.folders : ref?.silo === "photos" ? PH?.folders : null;
+        const folder = root && ref.id ? findFolder(root, ref.id) : null;
+        if (folder) quickResolved.push({ silo: ref.silo, id: ref.id, name: folder.name || "Folder" });
+      }
+      if (quickResolved.length) {
+        chrome.contextMenus.create({ id: "qa-root", title: "\u26a1 Prompt Vault Quick Access", contexts: ["all"] });
+        for (const ref of quickResolved.slice(0, 20)) {
+          const prefix = ref.silo === "snippets" ? "snip" : ref.silo === "notes" ? "note" : "img";
+          const icon = ref.silo === "snippets" ? "\ud83d\udccb" : ref.silo === "notes" ? "\ud83d\udcdd" : "\ud83d\uddbc";
+          const contexts = ref.silo === "photos" ? ["all"] : ["selection"];
+          chrome.contextMenus.create({ id: `qa-${prefix}-save-${ref.id}`, title: `${icon} ${ref.name}`, parentId: "qa-root", contexts });
         }
       }
 
@@ -714,7 +735,9 @@ async function getPageMeta(tabId) {
 
 // ── Context menu click handler ──
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-  const id = info.menuItemId;
+  let id = info.menuItemId;
+  // Quick Access aliases deliberately reuse the normal, tested save handlers.
+  if (typeof id === "string" && id.startsWith("qa-")) id = id.slice(3);
 
   // ── Inject prompt into active field ──
   if (typeof id === "string" && id.startsWith("inj-p::")) {
@@ -1281,6 +1304,11 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
     return true;
   }
 
+  if (msg.type === "AUTO_BACKUP_NOW") {
+    pvRunAutoBackup("manual").then(r => respond({ success: !r.skipped, ...r }));
+    return true;
+  }
+
   if (msg.type === "OPEN_URL") {
     chrome.tabs.create({ url: msg.url, active: true });
     respond({ success: true });
@@ -1455,16 +1483,131 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
   }
 });
 
+// ── Automatic on-disk safety backups (see backup-guard.js for the contract) ──
+// Full storage dumps written to Downloads/PromptVault-Backups. Files survive
+// extension removal, so a remove-and-reinstall can always be restored.
+
+// Write a file without leaving a download-tray/history entry: erase the
+// DownloadItem once it completes (erase removes history only — the file stays).
+// Scheduled backups run twice a day and the first photo mirror writes one file
+// per photo; without this the tray would drown in backup noise.
+function pvSilentDownload(opts) {
+  return new Promise(resolve => {
+    chrome.downloads.download(opts, id => {
+      if (chrome.runtime.lastError || id === undefined) { resolve(false); return; }
+      const finish = ok => { try { chrome.downloads.onChanged.removeListener(listener); } catch (e) { /* gone */ } if (ok) chrome.downloads.erase({ id }, () => resolve(true)); else resolve(false); };
+      const listener = delta => {
+        if (delta.id !== id || !delta.state) return;
+        if (delta.state.current === "complete") finish(true);
+        else if (delta.state.current === "interrupted") finish(false);
+      };
+      chrome.downloads.onChanged.addListener(listener);
+      // data: URLs often complete before the listener attaches — check once.
+      chrome.downloads.search({ id }, items => {
+        const it = items && items[0];
+        if (it && it.state === "complete") finish(true);
+        else if (it && it.state === "interrupted") finish(false);
+      });
+    });
+  });
+}
+async function pvRunAutoBackup(reason) {
+  try {
+    const all = await new Promise(res => chrome.storage.local.get(null, r => res(r || {})));
+    const version = chrome.runtime.getManifest().version;
+    const dump = PVBackupGuard.buildStorageDump(all, version, reason);
+    const items = PVBackupGuard.dumpItemCount(dump);
+    // An empty vault must never overwrite existing backup files: right after a
+    // reinstall, those files are the only surviving copy of the user's data.
+    if (items === 0) { console.log("[PV] auto-backup skipped — vault is empty (" + reason + ")"); return { skipped: true, items: 0 }; }
+    const json = JSON.stringify(dump);
+    const url = toDataUrl(json, "application/json");
+    let written = 0;
+    for (const filename of PVBackupGuard.autoBackupFilenames(new Date(), reason)) {
+      if (await pvSilentDownload({ url, filename, saveAs: false, conflictAction: "overwrite" })) written++;
+    }
+    const meta = (await new Promise(res => chrome.storage.local.get(["pv_m"], r => res(r || {})))).pv_m || {};
+    meta.lastAutoBackupAt = Date.now();
+    meta.lastAutoBackupItems = items;
+    meta.lastAutoBackupReason = reason;
+    await new Promise(res => chrome.storage.local.set({ pv_m: meta }, res));
+    console.log(`[PV] auto-backup (${reason}): ${items} items, ${written} files`);
+    const photos = await pvBackupPhotoOriginals().catch(e => { console.warn("[PV] photo mirror failed:", e && e.message); return { mirrored: 0 }; });
+    return { skipped: false, items, written, photosMirrored: photos.mirrored || 0 };
+  } catch (e) {
+    console.warn("[PV] auto-backup failed:", e && e.message);
+    return { skipped: true, error: e && e.message };
+  }
+}
+
+// ── Photo originals mirror ──
+// Full-resolution bytes live in IndexedDB, which extension removal also wipes.
+// Mirror each original once to Downloads/PromptVault-Backups/photo-originals/
+// as an ordinary image file named <photo-id>.<ext>. Incremental: an index in
+// storage records what is already mirrored, so steady-state runs write nothing.
+// The index itself rides inside every storage dump.
+const PV_PHOTO_BACKUP_INDEX_KEY = "pv_photo_backup_index";
+const PV_PHOTO_BACKUP_BATCH = 300;
+function pvCollectPhotoItems(store) {
+  const out = [];
+  (function walk(n) {
+    if (!n || typeof n !== "object") return;
+    for (const p of Array.isArray(n.prompts) ? n.prompts : []) if (p && p.id) out.push(p);
+    for (const c of Array.isArray(n.children) ? n.children : []) walk(c);
+  })(store && store.folders);
+  for (const t of Array.isArray(store && store.trash) ? store.trash : []) {
+    const p = t && t.content && t.content.id ? t.content : t; // toTrash wraps the item as {id, content:item}
+    if (p && p.id) out.push(p);
+  }
+  return out;
+}
+async function pvBackupPhotoOriginals() {
+  const res = await new Promise(r => chrome.storage.local.get(["pv_ph", PV_PHOTO_BACKUP_INDEX_KEY, "pv_m"], x => r(x || {})));
+  const index = res[PV_PHOTO_BACKUP_INDEX_KEY] && typeof res[PV_PHOTO_BACKUP_INDEX_KEY] === "object" ? res[PV_PHOTO_BACKUP_INDEX_KEY] : {};
+  const photos = pvCollectPhotoItems(res.pv_ph);
+  const todo = PVBackupGuard.photoBackupPlan(photos, index, PV_PHOTO_BACKUP_BATCH);
+  let mirrored = 0;
+  for (const p of todo) {
+    let blob = null;
+    try { blob = await pvImgGet(p.id); } catch (e) { /* db unavailable */ }
+    if (!blob) continue; // thumb-only photo — nothing local to mirror
+    const filename = PVBackupGuard.photoOriginalFilename(p, blob.type || p.mime);
+    const url = await pvBlobToDataURL(blob);
+    const ok = await pvSilentDownload({ url, filename, saveAs: false, conflictAction: "overwrite" });
+    if (ok) { index[p.id] = { bytes: blob.size, file: filename }; mirrored++; }
+  }
+  if (mirrored) {
+    const meta = res.pv_m || {};
+    meta.lastPhotoBackupAt = Date.now();
+    meta.photoBackupCount = Object.keys(index).length;
+    await new Promise(r => chrome.storage.local.set({ [PV_PHOTO_BACKUP_INDEX_KEY]: index, pv_m: meta }, r));
+    console.log(`[PV] photo mirror: ${mirrored} originals written (${Object.keys(index).length} total on disk)`);
+  }
+  return { mirrored, total: Object.keys(index).length };
+}
+// Throttled variant for startup wakes — at most one scheduled-style run per 20h.
+async function pvAutoBackupIfDue(reason) {
+  const res = await new Promise(r => chrome.storage.local.get(["pv_m"], x => r(x || {})));
+  const last = res.pv_m?.lastAutoBackupAt || 0;
+  if (Date.now() - last < 20 * 3600 * 1000) return;
+  return pvRunAutoBackup(reason);
+}
+
 // ── Lifecycle ──
-chrome.runtime.onInstalled.addListener(() => { buildFolderMenus(); bmSyncInit(); });
-chrome.runtime.onStartup.addListener(() => { buildFolderMenus(); bmSyncInit(); });
+chrome.runtime.onInstalled.addListener(details => {
+  buildFolderMenus(); bmSyncInit();
+  // "update" fires with the vault data intact (same extension ID), so this
+  // snapshots the vault on-disk at every single version transition.
+  pvRunAutoBackup(details && details.reason ? details.reason : "install");
+});
+chrome.runtime.onStartup.addListener(() => { buildFolderMenus(); bmSyncInit(); pvAutoBackupIfDue("startup"); });
 // Belt-and-suspenders: any write to a vault tree key refreshes the right-click menus,
 // even when the write came from Drive restore, full-view windows, or quick-save paths
 // that never send REBUILD_MENUS. Debounced so bulk imports build once.
 let _menuChangeTimer = null;
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local") return;
-  if (!["pv_p", "pv_s", "pv_b", "pv_k", "pv_n", "pv_ph"].some(k => k in changes)) return;
+  if (!["pv_p", "pv_s", "pv_b", "pv_k", "pv_n", "pv_ph", "pv_cfg"].some(k => k in changes)) return;
   clearTimeout(_menuChangeTimer);
   _menuChangeTimer = setTimeout(buildFolderMenus, 800);
 });
@@ -1544,8 +1687,10 @@ chrome.commands.onCommand.addListener((cmd) => {
 
 // ── Backup alarm ──
 chrome.alarms.create("bk-check", { periodInMinutes: 360 });
+chrome.alarms.create("pv-auto-backup", { periodInMinutes: 720 });
 chrome.alarms.onAlarm.addListener(a => {
   if (a.name === "bk-check") chrome.runtime.sendMessage({ type: "BACKUP_REMINDER" }).catch(() => {});
+  if (a.name === "pv-auto-backup") pvRunAutoBackup("scheduled");
   if (a.name === "pv-reconnect") pvbConnect();
 });
 

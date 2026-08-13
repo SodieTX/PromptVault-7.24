@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Lists & Tasks — Prompt Vault</title>
+  <style>
+    :root{color-scheme:dark;--bg:#111217;--panel:#191b22;--panel2:#20232c;--line:#343844;--text:#ececf1;--muted:#9da3b1;--accent:#74b9a7;--danger:#df6b72;--shadow:0 10px 30px #0007}*{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:13px/1.4 Inter,system-ui,sans-serif}button,input,select,textarea{font:inherit}button{border:1px solid var(--line);border-radius:7px;background:var(--panel2);color:var(--text);padding:6px 9px;cursor:pointer}button:hover{border-color:var(--accent)}button.danger{color:var(--danger)}input,select,textarea{border:1px solid var(--line);border-radius:7px;background:#12141a;color:var(--text);padding:7px;outline:none}input:focus,select:focus,textarea:focus{border-color:var(--accent)}
+    body{display:flex;flex-direction:column;overflow:hidden}.top{height:52px;display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--panel);flex:none}.brand{font-weight:750;font-size:15px;margin-right:auto}.brand small{display:block;color:var(--muted);font-weight:400;font-size:10px}.layout{display:grid;grid-template-columns:230px 270px minmax(0,1fr);min-height:0;flex:1}.pane{min-height:0;border-right:1px solid var(--line);display:flex;flex-direction:column}.pane-head{padding:10px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:6px;flex-wrap:wrap}.pane-head strong{margin-right:auto}.scroll{overflow:auto;min-height:0;flex:1;padding:8px}.folder{display:flex;align-items:center;gap:5px;padding:5px 7px;border-radius:6px;cursor:pointer}.folder:hover{background:var(--panel2)}.folder.on{background:#29443e;color:#c9fff0}.folder .name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}.count{color:var(--muted);font-size:10px}.file{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px;padding:8px;border:1px solid var(--line);border-radius:8px;margin-bottom:7px;background:var(--panel)}.file.on{border-color:var(--accent);box-shadow:0 0 0 1px #74b9a744}.file-main{cursor:pointer;min-width:0}.file-title{font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.file-type{color:var(--muted);font-size:10px;text-transform:capitalize}.mini{padding:3px 6px;font-size:10px}.empty{border:1px dashed var(--line);border-radius:9px;padding:22px;text-align:center;color:var(--muted);margin:8px}.editor{min-width:0;display:flex;flex-direction:column;min-height:0}.editor-head{display:flex;gap:7px;padding:10px;border-bottom:1px solid var(--line);align-items:center}.editor-title{font-weight:700;font-size:16px;min-width:100px;flex:1}.editor-body{min-height:0;overflow:auto;padding:14px}.add-row{display:flex;gap:6px;margin-bottom:10px}.add-row input{flex:1}.list-row{display:grid;grid-template-columns:28px minmax(0,1fr) auto;align-items:center;gap:6px;padding:6px;border-bottom:1px solid #292c35}.list-row input[type=text]{width:100%;background:transparent}.num{color:var(--muted);text-align:right}.row-actions{display:flex;gap:3px}.sticky-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px}.sticky{min-height:150px;padding:10px;border-radius:5px;color:#2b271b;box-shadow:var(--shadow);display:flex;flex-direction:column}.sticky textarea{flex:1;resize:vertical;background:#ffffff38;color:#201e17;border-color:#0002}.sticky-actions{display:flex;gap:4px;margin-top:7px}.sticky-actions button,.sticky-actions select{background:#ffffff44;color:#272318;border-color:#0002}.toast{position:fixed;right:14px;bottom:14px;background:#29312f;border:1px solid var(--accent);padding:8px 12px;border-radius:8px;opacity:0;pointer-events:none;transition:.2s;z-index:60}.toast.on{opacity:1}
+    /* Drag & drop affordances */
+    .folder.drop{outline:2px solid var(--accent);outline-offset:-2px;background:#74b9a71c}
+    .file.dragging{opacity:.4}
+    .list-row .grip{cursor:grab;color:var(--muted);padding:0 4px;user-select:none;font-size:11px;letter-spacing:-2px}
+    .list-row.dragging{opacity:.4}
+    .list-row.drop-above{box-shadow:0 -2px 0 var(--accent)}
+    .list-row.drop-below{box-shadow:0 2px 0 var(--accent)}
+    /* ── Kanban board ──
+       One horizontal scroller (the board). Leaf columns are fixed-width and
+       can never shrink; groups size themselves from their children. */
+    .board-bar{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+    .board{display:flex;gap:10px;align-items:flex-start;overflow-x:auto;min-height:calc(100vh - 160px);padding:2px 2px 10px;background:#0d0f14;border-radius:10px;padding:10px}
+    .column,.colgroup{flex:0 0 auto;display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line);border-radius:9px}
+    .column.leaf{width:264px}
+    .colgroup{background:#151820;padding:0 6px 6px}
+    .colgroup>.subcolumns{display:flex;gap:6px;align-items:flex-start}
+    .colgroup .column.leaf{width:240px}
+    .colgroup .colgroup .column.leaf{width:220px}
+    .column-head{padding:8px 8px 6px;display:flex;align-items:center;gap:5px}
+    .group-head{border-bottom:1px dashed var(--line);margin-bottom:6px}
+    .col-name{min-width:0;flex:1;font-weight:700;background:transparent;border-color:transparent;padding:3px 5px}
+    .col-name:hover{border-color:var(--line)}
+    .col-name:focus{border-color:var(--accent);background:#12141a}
+    .colcount{font-size:10px;color:var(--muted);background:#ffffff10;border-radius:9px;padding:1px 7px;flex-shrink:0}
+    .head-acts{display:flex;gap:2px;opacity:0;transition:opacity .12s;flex-shrink:0}
+    .column-head:hover .head-acts{opacity:1}
+    .colbtn{border:0;background:transparent;color:var(--muted);padding:2px 5px;border-radius:5px;font-size:12px;cursor:pointer}
+    .colbtn:hover{background:#ffffff14;color:var(--text)}
+    .cards{padding:2px 8px;overflow-y:auto;min-height:40px;max-height:calc(100vh - 265px);flex:1}
+    .cards.over{background:#74b9a712;border-radius:7px}
+    .card{position:relative;background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:8px 9px;margin-bottom:7px;cursor:pointer;overflow:hidden}
+    .card:hover{border-color:#4a5162}
+    .card.dragging{opacity:.35}
+    .card.drop-above{box-shadow:0 -3px 0 var(--accent)}
+    .card.drop-below{box-shadow:0 3px 0 var(--accent)}
+    .card-bar{position:absolute;top:0;left:0;right:0;height:3px}
+    .card-title{font-size:12.5px;line-height:1.35;overflow-wrap:anywhere}
+    .card-untitled{color:var(--muted);font-style:italic}
+    .card-chip{display:inline-block;font-size:9px;font-weight:700;border:1px solid;border-radius:8px;padding:0 6px;margin-top:5px}
+    .card-due{font-size:10px;color:var(--muted);margin-top:4px}
+    .card-field{font-size:10px;color:var(--muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .add-card{margin:0 8px 8px;padding:6px 8px;border-radius:6px;color:var(--muted);font-size:11px;cursor:pointer}
+    .add-card:hover{background:#ffffff0d;color:var(--text)}
+    .add-card-input{width:100%}
+    .ghost-col{flex:0 0 auto;width:264px;min-height:90px;align-self:flex-start;border:1px dashed var(--line);border-radius:9px;background:transparent;color:var(--muted);font-size:12px;cursor:pointer}
+    .ghost-col:hover{border-color:var(--accent);color:var(--accent);background:#74b9a70d}
+    .column.collapsed{width:30px;flex:0 0 30px;min-height:180px;align-items:center;padding:8px 0;gap:8px;cursor:pointer}
+    .column.collapsed:hover{border-color:var(--accent)}
+    .column.collapsed .collapsed-title{writing-mode:vertical-rl;transform:rotate(180deg);font-weight:700;font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;flex:1;white-space:nowrap}
+    .column.collapsed .collapsed-count{font-size:10px;color:var(--accent);border:1px solid var(--line);border-radius:8px;padding:1px 5px}
+    .column.collapsed .collapsed-open{color:var(--muted);font-size:10px}
+    .pvl-colorgrid{display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin:2px 0 4px}
+    .pvl-color{width:24px;height:24px;border-radius:6px;border:2px solid transparent;cursor:pointer}
+    .pvl-color.on{border-color:#fff;box-shadow:0 0 0 2px var(--accent)}
+    /* Context menu + modal */
+    .pvl-menu{position:fixed;z-index:70;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:4px;min-width:170px;box-shadow:var(--shadow)}
+    .pvl-menu-item{display:flex;align-items:center;gap:7px;padding:6px 9px;border-radius:5px;cursor:pointer;font-size:12px}
+    .pvl-menu-item:hover{background:#2a2e39}.pvl-menu-item.danger{color:var(--danger)}
+    .pvl-menu-sep{height:1px;background:var(--line);margin:4px 2px}
+    .pvl-swatch{width:13px;height:13px;border-radius:4px;border:1px solid #0006;flex-shrink:0;display:inline-block}
+    .pvl-modal-wrap{position:fixed;inset:0;background:#000a;z-index:65;display:flex;align-items:center;justify-content:center;padding:20px}
+    .pvl-modal{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;width:min(480px,92vw);max-height:86vh;overflow-y:auto;box-shadow:var(--shadow)}
+    .pvl-modal h3{margin:0 0 8px;font-size:15px}.pvl-modal h4{margin:14px 0 4px;font-size:12px;color:var(--accent)}
+    .pvl-tab-note,.pvl-note{font-size:10px;color:var(--muted);margin:2px 0 6px}
+    .pvl-lbl{display:block;font-size:10px;color:var(--muted);margin:8px 0 2px}
+    .pvl-modal input[type=text],.pvl-modal input[type=date],.pvl-modal input:not([type]){width:100%}
+    .pvl-fields{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:5px;font-size:12px}
+    .pvl-fields label{display:flex;align-items:center;gap:6px;cursor:pointer}
+    .pvl-statuses{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:5px}
+    .pvl-status-row{display:flex;align-items:center;gap:7px}.pvl-status-row input{flex:1;min-width:0}
+    .pvl-brow{display:flex;justify-content:flex-end;gap:6px;margin-top:14px}
+    .mini.primary{background:var(--accent);color:#10201b;border-color:var(--accent);font-weight:700}@media(max-width:850px){.layout{grid-template-columns:185px minmax(0,1fr)}.editor{position:fixed;inset:52px 0 0 0;background:var(--bg);z-index:3}.editor.hidden{display:none}}@media(max-width:520px){.layout{grid-template-columns:1fr}.pane:first-child{display:none}.top .wide-only{display:none}}
+  </style>
+</head>
+<body>
+  <header class="top"><button id="backBtn" title="Return to Prompt Vault">← Back / Exit</button><div class="brand">Lists & Tasks<small>Independent trees, lists, boards, and sticky notes</small></div><span id="saveState" class="count">Saved locally</span><button id="closeBtn" class="wide-only" title="Close this tab">Close</button></header>
+  <main class="layout">
+    <aside class="pane"><div class="pane-head"><strong>Folders</strong><button id="newFolder" class="mini">+ Folder</button></div><div class="scroll" id="folderTree"></div></aside>
+    <section class="pane"><div class="pane-head"><strong id="folderTitle">Files</strong><select id="newType"><option value="bulleted">Bulleted list</option><option value="numbered">Numbered list</option><option value="checklist">Checklist</option><option value="kanban">Kanban board</option><option value="sticky">Sticky notes</option></select><button id="newFile" class="mini">+ New</button></div><div class="scroll" id="fileList"></div></section>
+    <section class="editor hidden" id="editor"><div class="empty">Choose a file or create one.</div></section>
+  </main>
+  <div class="toast" id="toast"></div>
+  <script src="lists-model.js"></script>
+  <script src="fullview-lists.js"></script>
+</body>
+</html>
