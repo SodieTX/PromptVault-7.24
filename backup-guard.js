@@ -77,14 +77,57 @@ function pvIsStorageDump(payload) {
     payload.storage && typeof payload.storage === "object" && !Array.isArray(payload.storage));
 }
 
+// ── Photo originals mirror ──
+// Full-resolution image bytes live in IndexedDB (see pv-images-db.js), which
+// Chrome also wipes on extension removal. Each original is therefore mirrored
+// once to Downloads as an ordinary image file, named by its photo id so a
+// reinstall can re-attach files to their vault items mechanically.
+const PV_PHOTO_DIR = PV_BACKUP_DIR + "/photo-originals";
+
+function pvPhotoOriginalExt(mime) {
+  const t = String(mime || "").toLowerCase();
+  return t.includes("jpeg") ? "jpg" : t.includes("png") ? "png" : t.includes("webp") ? "webp" :
+    t.includes("gif") ? "gif" : t.includes("avif") ? "avif" : t.includes("svg") ? "svg" : "img";
+}
+function pvPhotoOriginalFilename(photo, mime) {
+  return `${PV_PHOTO_DIR}/${String(photo.id)}.${pvPhotoOriginalExt(mime || photo.mime)}`;
+}
+/** Parse a photo id back out of a mirrored file's name ("i_42.jpg" → "i_42"). */
+function pvPhotoIdFromFilename(name) {
+  const base = String(name || "").split(/[\\/]/).pop() || "";
+  const dot = base.lastIndexOf(".");
+  return dot > 0 ? base.slice(0, dot) : base;
+}
+/**
+ * Incremental plan: which photos still need mirroring. `index` maps photo id →
+ * {bytes} for already-mirrored originals; a photo is due when unseen or when
+ * its recorded size changed. Photos known to have no local bytes are skipped.
+ */
+function pvPhotoBackupPlan(photos, index, limit) {
+  const idx = index && typeof index === "object" ? index : {};
+  const todo = [];
+  for (const p of Array.isArray(photos) ? photos : []) {
+    if (!p || typeof p.id !== "string" || p.hasBlob === false) continue;
+    const prev = idx[p.id];
+    if (prev && (!Number.isFinite(p.bytes) || prev.bytes === p.bytes)) continue;
+    todo.push(p);
+    if (Number.isFinite(limit) && todo.length >= limit) break;
+  }
+  return todo;
+}
+
 if (typeof globalThis !== "undefined") {
   globalThis.PVBackupGuard = {
     FORMAT: PV_STORAGE_DUMP_FORMAT,
     DIR: PV_BACKUP_DIR,
+    PHOTO_DIR: PV_PHOTO_DIR,
     SKIP_KEYS: [...PV_DUMP_SKIP_KEYS],
     buildStorageDump: pvBuildStorageDump,
     dumpItemCount: pvDumpItemCount,
     autoBackupFilenames: pvAutoBackupFilenames,
-    isStorageDump: pvIsStorageDump
+    isStorageDump: pvIsStorageDump,
+    photoOriginalFilename: pvPhotoOriginalFilename,
+    photoIdFromFilename: pvPhotoIdFromFilename,
+    photoBackupPlan: pvPhotoBackupPlan
   };
 }

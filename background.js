@@ -1510,11 +1510,61 @@ async function pvRunAutoBackup(reason) {
     meta.lastAutoBackupReason = reason;
     await new Promise(res => chrome.storage.local.set({ pv_m: meta }, res));
     console.log(`[PV] auto-backup (${reason}): ${items} items, ${written} files`);
-    return { skipped: false, items, written };
+    const photos = await pvBackupPhotoOriginals().catch(e => { console.warn("[PV] photo mirror failed:", e && e.message); return { mirrored: 0 }; });
+    return { skipped: false, items, written, photosMirrored: photos.mirrored || 0 };
   } catch (e) {
     console.warn("[PV] auto-backup failed:", e && e.message);
     return { skipped: true, error: e && e.message };
   }
+}
+
+// ── Photo originals mirror ──
+// Full-resolution bytes live in IndexedDB, which extension removal also wipes.
+// Mirror each original once to Downloads/PromptVault-Backups/photo-originals/
+// as an ordinary image file named <photo-id>.<ext>. Incremental: an index in
+// storage records what is already mirrored, so steady-state runs write nothing.
+// The index itself rides inside every storage dump.
+const PV_PHOTO_BACKUP_INDEX_KEY = "pv_photo_backup_index";
+const PV_PHOTO_BACKUP_BATCH = 300;
+function pvCollectPhotoItems(store) {
+  const out = [];
+  (function walk(n) {
+    if (!n || typeof n !== "object") return;
+    for (const p of Array.isArray(n.prompts) ? n.prompts : []) if (p && p.id) out.push(p);
+    for (const c of Array.isArray(n.children) ? n.children : []) walk(c);
+  })(store && store.folders);
+  for (const t of Array.isArray(store && store.trash) ? store.trash : []) {
+    const p = t && t.content && t.content.id ? t.content : t; // toTrash wraps the item as {id, content:item}
+    if (p && p.id) out.push(p);
+  }
+  return out;
+}
+async function pvBackupPhotoOriginals() {
+  const res = await new Promise(r => chrome.storage.local.get(["pv_ph", PV_PHOTO_BACKUP_INDEX_KEY, "pv_m"], x => r(x || {})));
+  const index = res[PV_PHOTO_BACKUP_INDEX_KEY] && typeof res[PV_PHOTO_BACKUP_INDEX_KEY] === "object" ? res[PV_PHOTO_BACKUP_INDEX_KEY] : {};
+  const photos = pvCollectPhotoItems(res.pv_ph);
+  const todo = PVBackupGuard.photoBackupPlan(photos, index, PV_PHOTO_BACKUP_BATCH);
+  let mirrored = 0;
+  for (const p of todo) {
+    let blob = null;
+    try { blob = await pvImgGet(p.id); } catch (e) { /* db unavailable */ }
+    if (!blob) continue; // thumb-only photo — nothing local to mirror
+    const filename = PVBackupGuard.photoOriginalFilename(p, blob.type || p.mime);
+    const url = await pvBlobToDataURL(blob);
+    const ok = await new Promise(r => chrome.downloads.download(
+      { url, filename, saveAs: false, conflictAction: "overwrite" },
+      () => r(!chrome.runtime.lastError)
+    ));
+    if (ok) { index[p.id] = { bytes: blob.size, file: filename }; mirrored++; }
+  }
+  if (mirrored) {
+    const meta = res.pv_m || {};
+    meta.lastPhotoBackupAt = Date.now();
+    meta.photoBackupCount = Object.keys(index).length;
+    await new Promise(r => chrome.storage.local.set({ [PV_PHOTO_BACKUP_INDEX_KEY]: index, pv_m: meta }, r));
+    console.log(`[PV] photo mirror: ${mirrored} originals written (${Object.keys(index).length} total on disk)`);
+  }
+  return { mirrored, total: Object.keys(index).length };
 }
 // Throttled variant for startup wakes — at most one scheduled-style run per 20h.
 async function pvAutoBackupIfDue(reason) {

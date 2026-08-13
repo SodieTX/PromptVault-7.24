@@ -3928,8 +3928,9 @@ function renderSettings(){
   h+=`<div class="sec"><div class="sec-title">🛟 Automatic safety backups</div>
     <div style="font-size:10px;color:var(--mu);line-height:1.6;margin-bottom:6px">Prompt Vault writes a <strong>complete</strong> copy of the vault — every section, folder, collection, and setting — to <strong>Downloads / PromptVault-Backups</strong> twice a day, on every version update, and on demand. These are ordinary files on your computer, so they survive removing or reinstalling the extension. An empty vault never overwrites them.</div>
     <div style="font-size:10px;color:${_abAt?"var(--gn)":"var(--dn)"};margin-bottom:6px">${_abAt?`Last backup: ${esc(_abAt)} · ${meta.lastAutoBackupItems||0} items (${esc(meta.lastAutoBackupReason||"scheduled")})`:"No automatic backup has run yet — click Back up now."}</div>
-    <div style="display:flex;gap:5px;flex-wrap:wrap"><button class="bs" id="autoBackupNow">${I.dl} Back up now</button><button class="bs" id="autoBackupRestore">&#128735; Restore from backup file…</button></div>
-    <div style="font-size:9px;color:var(--dm);margin-top:5px">To restore after a reinstall: open any empty section &rarr; <strong>Restore Backup</strong> &rarr; pick <code>prompt-vault-backup-latest.json</code>. Full-resolution photo originals travel with manual full exports; automatic backups keep every photo's thumbnail, organization, and source link for re-fetching.</div>
+    <div style="font-size:10px;color:var(--mu);line-height:1.6;margin-bottom:6px">Full-resolution photo originals are mirrored alongside, once each, into <strong>photo-originals/</strong>${meta?.photoBackupCount?` — <span style="color:var(--gn)">${meta.photoBackupCount} on disk</span>`:""}. New photos are picked up on every backup pass.</div>
+    <div style="display:flex;gap:5px;flex-wrap:wrap"><button class="bs" id="autoBackupNow">${I.dl} Back up now</button><button class="bs" id="autoBackupRestore">&#128735; Restore from backup file…</button><button class="bs" id="photoReattach" title="After a reinstall: select the photo-originals folder to re-attach full-resolution files to their photos">${S.frame} Re-attach photo originals…</button></div>
+    <div style="font-size:9px;color:var(--dm);margin-top:5px">To restore after a reinstall: open any empty section &rarr; <strong>Restore Backup</strong> &rarr; pick <code>prompt-vault-backup-latest.json</code>, then <strong>Re-attach photo originals</strong> and select the <code>photo-originals</code> folder.</div>
   </div>`;
 
   // ── Improvement notes — structured bullets with migration from the legacy paragraph ──
@@ -4445,6 +4446,7 @@ function renderSettings(){
     })}catch{flash("Backup failed — extension worker unavailable")}
   });
   $("autoBackupRestore")?.addEventListener("click",openVaultBackupRestore);
+  $("photoReattach")?.addEventListener("click",openPhotoOriginalsReattach);
   const _improvementNotesSave=debounce(saveImprovementNotes,400);
   document.querySelectorAll("[data-imp-text]").forEach(el=>el.addEventListener("input",e=>{const n=meta.improvementNotes.find(x=>x.id===e.target.dataset.impText);if(n){n.text=e.target.value;n.modified=Date.now();_improvementNotesSave()}}));
   document.querySelectorAll("[data-imp-del]").forEach(el=>el.addEventListener("click",()=>{meta.improvementNotes=meta.improvementNotes.filter(x=>x.id!==el.dataset.impDel);saveImprovementNotes();renderSettings()}));
@@ -9834,7 +9836,7 @@ function showStorageDumpRestore(dump,fileName){
   showModal(`<h3>Restore Complete Vault Backup</h3>
     <p style="font-size:10px;color:var(--mu)">${esc(fileName||"backup file")} · saved ${esc(when)}${dump.appVersion?` · Prompt Vault ${esc(dump.appVersion)}`:""}</p>
     <div class="rc-diff"><div class="rc-diff-row rc-diff-h"><span></span><span>Current</span><span>Backup</span><span></span></div>${rows}</div>
-    <p style="font-size:9px;color:var(--dm)">This restores <strong>everything</strong> — every section, folder structure, collections, settings, and workspaces — exactly as they were when the backup was written. The current vault is backed up to Downloads/PromptVault-Backups first.</p>
+    <p style="font-size:9px;color:var(--dm)">This restores <strong>everything</strong> — every section, folder structure, collections, settings, and workspaces — exactly as they were when the backup was written. The current vault is backed up to Downloads/PromptVault-Backups first. After restoring, use Settings &rarr; <strong>Re-attach photo originals</strong> to reconnect full-resolution files from the <code>photo-originals</code> folder.</p>
     <div class="brow"><button class="bg-btn" id="sdX">Cancel</button><button class="bdn" id="sdGo">Restore everything</button></div>`,mc=>{
     mc.querySelector("#sdX").addEventListener("click",closeModal);
     mc.querySelector("#sdGo").addEventListener("click",()=>{
@@ -9862,6 +9864,32 @@ function openVaultBackupRestore(){
       // Older manual exports and Drive backups keep working through the import wizard.
       importParsedText(text,file.name);
     }catch(e){flash("Backup not recognized: "+e.message)}
+  });
+  input.click();
+}
+// Re-attach mirrored full-resolution originals (Downloads/PromptVault-Backups/
+// photo-originals/) to their vault items after a reinstall. Files are named
+// <photo-id>.<ext>, so matching is mechanical; existing blobs are not touched.
+function openPhotoOriginalsReattach(){
+  if(typeof pvImgPut!=="function"){flash("Image database unavailable");return}
+  const input=document.createElement("input");input.type="file";input.multiple=true;
+  input.webkitdirectory=true;input.setAttribute("webkitdirectory","");
+  input.addEventListener("change",async()=>{
+    const files=[...input.files];if(!files.length)return;
+    let attached=0,already=0,unmatched=0;
+    for(const file of files){
+      if(!/^image\//.test(file.type||"")&&!/\.(jpe?g|png|webp|gif|avif|svg|img)$/i.test(file.name))continue;
+      const id=typeof PVBackupGuard!=="undefined"?PVBackupGuard.photoIdFromFilename(file.name):file.name.replace(/\.[^.]+$/,"");
+      const item=findItemGlobal(PH.folders,id);
+      if(!item){unmatched++;continue}
+      const existing=await pvImgGet(id).catch(()=>null);
+      if(existing){already++;continue}
+      await pvImgPut(id,file);
+      item.hasBlob=true;attached++;
+    }
+    if(attached)save();
+    flash(`Photo originals: ${attached} re-attached${already?` · ${already} already present`:""}${unmatched?` · ${unmatched} without a matching photo`:""}`);
+    render();
   });
   input.click();
 }

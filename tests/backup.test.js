@@ -80,6 +80,39 @@ test('side panel recognizes and restores storage dumps', () => {
   assert.match(vaultSrc, /openVaultBackupRestore/, 'restore picker missing');
 });
 
+// ── Photo originals mirror: full-resolution bytes live in IndexedDB, which
+// extension removal also wipes — so each original is mirrored once to an
+// ordinary file on disk and can be re-attached by id after a reinstall. ──
+test('photo originals: filenames round-trip through ids and the plan is incremental', () => {
+  const G = loadBackupGuard();
+  const photo = { id: 'i_42', mime: 'image/jpeg', bytes: 5000 };
+  const name = G.photoOriginalFilename(photo);
+  assert.equal(name, 'PromptVault-Backups/photo-originals/i_42.jpg');
+  assert.equal(G.photoIdFromFilename(name), 'i_42');
+  assert.equal(G.photoIdFromFilename('i_9.webp'), 'i_9');
+  const photos = [
+    { id: 'i_1', bytes: 100 },              // already mirrored, unchanged → skip
+    { id: 'i_2', bytes: 999 },              // mirrored but size changed → re-mirror
+    { id: 'i_3', bytes: 50 },               // new → mirror
+    { id: 'i_4', hasBlob: false },          // no local bytes → skip
+  ];
+  const plan = G.photoBackupPlan(photos, { i_1: { bytes: 100 }, i_2: { bytes: 111 } });
+  // Spread into a host-realm array: the VM's Array.prototype fails deepStrictEqual.
+  assert.deepEqual([...plan].map(p => p.id), ['i_2', 'i_3']);
+  assert.equal(G.photoBackupPlan(photos, { i_1: { bytes: 100 } }, 1).length, 1, 'batch limit respected');
+});
+
+test('worker mirrors photo originals and the panel can re-attach them', () => {
+  const bg = read('background.js');
+  assert.match(bg, /pvBackupPhotoOriginals/, 'photo mirror missing from worker');
+  assert.match(bg, /pvRunAutoBackup[\s\S]*pvBackupPhotoOriginals/, 'photo mirror must run with every backup pass');
+  assert.match(bg, /pv_photo_backup_index/, 'incremental index missing');
+  const vaultSrc = read('vault.js');
+  assert.match(vaultSrc, /openPhotoOriginalsReattach/, 're-attach flow missing from panel');
+  assert.match(vaultSrc, /photoReattach/, 'Settings re-attach button missing');
+  assert.match(read('sidepanel.html'), /backup-guard\.js/, 'side panel must load the shared backup helpers');
+});
+
 // ── Extension identity: the manifest "key" pins the extension ID, which is what
 // chrome.storage.local is scoped to. Changing or dropping it silently orphans
 // every user's data. It must never change. ──

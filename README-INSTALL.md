@@ -1,4 +1,4 @@
-# Prompt Vault 7.25.4 — Chrome installation
+# Prompt Vault 7.25.5 — Chrome installation
 
 1. Get the extension folder onto disk in a stable location (clone this repository, or extract a release ZIP — do not load a ZIP directly).
 2. Open `chrome://extensions` in Chrome.
@@ -32,15 +32,19 @@ section, folder structure, collection, workspace, and setting — to:
 - `prompt-vault-backup-latest.json` — refreshed twice a day and on demand
 - `prompt-vault-backup-<mon…sun>.json` — a rolling 7-day window
 - `prompt-vault-backup-on-update.json` — written at every version change
+- `photo-originals/` — every photo's full-resolution original file, mirrored
+  once (named by photo id); new photos are picked up on each backup pass
 
 These are ordinary files on your computer. Chrome never touches them, so they
 survive removing and reinstalling the extension. An empty vault never
 overwrites them.
 
-**To restore after a reinstall:** open the side panel → any section shows
-**Restore Backup** on its welcome card (also in Settings → Automatic safety
-backups) → pick `prompt-vault-backup-latest.json` → Restore everything. The
-panel reloads with your entire vault exactly as it was.
+**To restore after a reinstall:**
 
-Full-resolution photo originals travel with manual full exports (Settings);
-automatic backups keep every photo's thumbnail, organization, and source link.
+1. Open the side panel → any empty section shows **Restore Backup** on its
+   welcome card (also in Settings → Automatic safety backups).
+2. Pick `prompt-vault-backup-latest.json` → **Restore everything**. The panel
+   reloads with every section, folder, collection, and setting exactly as it
+   was — including all photo organization, thumbnails, and source links.
+3. Settings → **Re-attach photo originals…** → select the `photo-originals`
+   folder. Full-resolution files reconnect to their photos by id.
